@@ -5,6 +5,7 @@ import morgan from "morgan";
 import cors from "cors";
 import busRoutes from "./routes/busRoutes.js";
 import passengerRoutes from "./routes/passengerRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
 import dotenv from "dotenv";
 
 const app = express();
@@ -15,17 +16,21 @@ app.use(morgan("dev"));
 
 // API
 app.use("/api/buses", busRoutes);
+console.log("1");
 app.use("/api/passengers", passengerRoutes);
+console.log("2");
+app.use("/api/bookings", bookingRoutes);
 
 // Errors: 404 fallback
 app.use((req, res) => {
+  console.log("3");
   res.status(404).json({ success: false, message: "Not Found" });
 });
 
 // --- Connect & start ---
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/busdb";
-const PORT = process.env.PORT || 4000;
+const PORT = 4000;
 
 mongoose
   .connect(MONGODB_URI)

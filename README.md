@@ -1,0 +1,1 @@
+leoforeio is a MERN-stack web application for managing intercity bus reservations in Sri Lanka. It provides a seamless platform for passengers to search routes, view schedules, check seat availability, and book tickets online

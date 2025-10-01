@@ -1,8 +1,13 @@
+// src/pages/BusBookingDashboard.jsx
 import { useEffect, useMemo, useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import { useSearchParams } from "react-router-dom";
+import Cookies from "js-cookie";
 import { getBuses, getBusById } from "../api/bus";
+import { createBooking } from "../api/booking";
+import { createPassenger, getPassengerByEmail } from "../api/passenger";
 
+/* --------------------------------- helpers -------------------------------- */
 const pad2 = (n) => String(n).padStart(2, "0");
 const todayYmd = () => {
   const d = new Date();
@@ -19,33 +24,44 @@ const toMinutes = (hhmm) => {
   return h * 60 + m;
 };
 
+/* --------------------------- main page component -------------------------- */
 export default function BusBookingDashboard() {
   const [searchParams] = useSearchParams();
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
   const [buses, setBuses] = useState([]);
   const [busId, setBusId] = useState("");
   const [travelDate, setTravelDate] = useState("");
+
+  const [passenger, setPassenger] = useState(null);
+  const [email, setEmail] = useState("");
+
+  // derived bus details
   const [route, setRoute] = useState("");
   const [depart, setDepart] = useState("");
   const [pricePerSeat, setPricePerSeat] = useState(0);
   const [totalSeats, setTotalSeats] = useState(0);
   const [pickups, setPickups] = useState([]);
   const [frequency, setFrequency] = useState("");
+
+  // seat status
   const [bookedGents, setBookedGents] = useState(new Set());
   const [bookedLadies, setBookedLadies] = useState(new Set());
-  const [reservedSeats, setReservedSeats] = useState(new Set());
   const [unavailableSeats, setUnavailableSeats] = useState(new Set());
   const [selected, setSelected] = useState(new Set());
 
+  // form
   const [form, setForm] = useState({
+    email: "",
     fname: "",
     lname: "",
     phone: "",
     gender: "",
     pickup: "",
     drop: "",
-    payment: "Cash",
+    payment: "Card",
   });
   const [errors, setErrors] = useState({
     fname: "",
@@ -54,9 +70,13 @@ export default function BusBookingDashboard() {
     gender: "",
     pickup: "",
     drop: "",
-    payment: "",
     travelDate: "",
   });
+
+  /* --------------------------------- effects -------------------------------- */
+  useEffect(() => {
+    setEmail(Cookies.get("email") || "");
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -64,11 +84,11 @@ export default function BusBookingDashboard() {
       try {
         const list = await getBuses();
         if (!mounted) return;
-        setBuses(list || []);
+        setBuses(Array.isArray(list) ? list : []);
       } catch (e) {
         setErr(e?.message || "Failed to load buses");
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
     return () => {
@@ -80,6 +100,31 @@ export default function BusBookingDashboard() {
     const q = searchParams.get("busId");
     if (q) setBusId(q);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!email) return;
+    (async () => {
+      try {
+        const p = await getPassengerByEmail(email);
+        if (p) {
+          setPassenger(p);
+          setForm((prev) => ({
+            ...prev,
+            email: p.email,
+            fname: p.fname,
+            lname: p.lname,
+            phone: p.phone,
+            gender: p.gender,
+          }));
+        } else {
+          setForm((prev) => ({ ...prev, email }));
+        }
+      } catch (err) {
+        // silent fail into manual form entry
+        console.error(err);
+      }
+    })();
+  }, [email]);
 
   useEffect(() => {
     const found = buses.find((b) => b._id === busId);
@@ -94,11 +139,6 @@ export default function BusBookingDashboard() {
     setPickups(Array.isArray(found?.pickups) ? found.pickups : []);
     setFrequency(found?.frequency || "");
     setSelected(new Set());
-    setBookedGents(new Set());
-    setBookedLadies(new Set());
-    setReservedSeats(new Set());
-    setUnavailableSeats(new Set());
-    setForm((f) => ({ ...f, pickup: "", drop: "" }));
   }, [busId, buses]);
 
   useEffect(() => {
@@ -114,16 +154,9 @@ export default function BusBookingDashboard() {
         setTotalSeats(Number(b?.seats || 0));
         setPickups(Array.isArray(b?.pickups) ? b.pickups : []);
         setFrequency(b?.frequency || "");
-        setBookedGents(
-          new Set(Array.isArray(b?.bookedByGents) ? b.bookedByGents : [])
-        );
-        setBookedLadies(
-          new Set(Array.isArray(b?.bookedByLadies) ? b.bookedByLadies : [])
-        );
-        setReservedSeats(new Set(Array.isArray(b?.reserved) ? b.reserved : []));
-        setUnavailableSeats(
-          new Set(Array.isArray(b?.unavailable) ? b.unavailable : [])
-        );
+        setBookedGents(new Set(b?.bookedByGents || []));
+        setBookedLadies(new Set(b?.bookedByLadies || []));
+        setUnavailableSeats(new Set(b?.unavailable || []));
         setSelected(new Set());
       } catch (e) {
         setErr(e?.message || "Failed to load bus details");
@@ -142,13 +175,9 @@ export default function BusBookingDashboard() {
     setPickups([]);
     setFrequency("");
     setSelected(new Set());
-    setBookedGents(new Set());
-    setBookedLadies(new Set());
-    setReservedSeats(new Set());
-    setUnavailableSeats(new Set());
-    setForm((f) => ({ ...f, pickup: "", drop: "" }));
   }
 
+  /* --------------------------------- derived -------------------------------- */
   const minDate = useMemo(() => {
     const today = new Date();
     const todayStr = todayYmd();
@@ -156,10 +185,9 @@ export default function BusBookingDashboard() {
     const nowMinutes = today.getHours() * 60 + today.getMinutes();
     const depMinutes = toMinutes(depart);
     const TWO_HOURS = 120;
-    if (depMinutes !== null && depMinutes - nowMinutes < TWO_HOURS) {
-      return addDaysYmd(today, 1);
-    }
-    return todayStr;
+    return depMinutes !== null && depMinutes - nowMinutes < TWO_HOURS
+      ? addDaysYmd(today, 1)
+      : todayStr;
   }, [depart]);
 
   const seatLayout = useMemo(() => {
@@ -204,110 +232,91 @@ export default function BusBookingDashboard() {
     return [...set];
   }, [pickups, toTerminal, fromTerminal]);
 
+  // seat helpers
   const getSeatStatus = (num) => {
     if (unavailableSeats.has(num)) return "unavailable";
-    if (reservedSeats.has(num)) return "reserved";
     if (bookedGents.has(num)) return "bookedGent";
     if (bookedLadies.has(num)) return "bookedLady";
     if (selected.has(num)) return "selected";
     return "available";
   };
   const isBlocked = (num) =>
-    unavailableSeats.has(num) ||
-    reservedSeats.has(num) ||
-    bookedGents.has(num) ||
-    bookedLadies.has(num);
+    unavailableSeats.has(num) || bookedGents.has(num) || bookedLadies.has(num);
 
   const toggleSeat = (num) => {
     if (!busId || !travelDate || isBlocked(num)) return;
     const next = new Set(selected);
-    if (next.has(num)) next.delete(num);
-    else next.add(num);
+    next.has(num) ? next.delete(num) : next.add(num);
     setSelected(next);
   };
 
   const subtotal = [...selected].length * pricePerSeat;
 
+  /* ------------------------------- validation ------------------------------- */
   const validators = {
-    fname: (v) => {
-      if (!v) return "";
-      const ok = /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim());
-      return ok ? "" : "Enter a valid name (letters/spaces, min 2 chars).";
-    },
-    lname: (v) => {
-      if (!v) return "";
-      const ok = /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim());
-      return ok ? "" : "Enter a valid name (letters/spaces, min 2 chars).";
-    },
-    phone: (v) => {
-      if (!v) return "";
-      const ok = /^\+94\d{9}$/.test(v);
-      return ok ? "" : "Phone must start with +94 and have 9 digits after it.";
-    },
-    gender: (v) => {
-      if (!v) return "";
-      return v === "Male" || v === "Female" ? "" : "Select Male or Female.";
-    },
+    fname: (v) =>
+      !v
+        ? ""
+        : /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim())
+        ? ""
+        : "Enter a valid first name.",
+    lname: (v) =>
+      !v
+        ? ""
+        : /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim())
+        ? ""
+        : "Enter a valid last name.",
+    phone: (v) =>
+      !v
+        ? ""
+        : /^\+94\d{9}$/.test(v)
+        ? ""
+        : "Phone must start with +94 and have 9 digits after it.",
+    gender: (v) =>
+      !v ? "" : v === "Male" || v === "Female" ? "" : "Select Male or Female.",
     pickup: (v) => {
       if (!v) return "";
-      if (v === toTerminal) return "Pickup cannot be the destination terminal.";
+      if (v === toTerminal) return "Pickup cannot be destination terminal.";
       if (v && form.drop && v === form.drop)
         return "Pickup and Drop cannot be the same.";
       return "";
     },
     drop: (v) => {
       if (!v) return "";
-      if (v === fromTerminal) return "Drop cannot be the origin terminal.";
+      if (v === fromTerminal) return "Drop cannot be origin terminal.";
       if (v && form.pickup && v === form.pickup)
         return "Pickup and Drop cannot be the same.";
       return "";
     },
-    payment: (v) => {
-      if (!v) return "";
-      return v === "Cash" || v === "Card" ? "" : "Select Cash or Card.";
-    },
-    travelDate: (v) => {
-      if (!v) return "";
-      return v < minDate
+    travelDate: (v) =>
+      !v
+        ? ""
+        : v < minDate
         ? "Choose a valid date (today may be disabled if < 2h to depart)."
-        : "";
-    },
+        : "",
   };
 
   const handleBlur = (field) => (e) => {
     const value = e.target.value;
-    const msg = validators[field](value);
+    const msg = validators[field]?.(value) || "";
     setErrors((er) => ({ ...er, [field]: msg }));
   };
 
   const handleChange = (field) => (e) => {
     const value = e.target.value;
     setForm((f) => ({ ...f, [field]: value }));
-    if (!value) setErrors((er) => ({ ...er, [field]: "" }));
-
-    if (field === "pickup" || field === "drop") {
-      if (field === "pickup") {
-        const msg = validators.pickup(value);
-        setErrors((er) => ({ ...er, pickup: msg }));
-        if (form.drop)
-          setErrors((er) => ({ ...er, drop: validators.drop(form.drop) }));
-      } else {
-        const msg = validators.drop(value);
-        setErrors((er) => ({ ...er, drop: msg }));
-        if (form.pickup)
-          setErrors((er) => ({
-            ...er,
-            pickup: validators.pickup(form.pickup),
-          }));
-      }
+    if (!value && errors[field]) {
+      setErrors((er) => ({ ...er, [field]: "" }));
     }
   };
 
   const handleDateChange = (e) => {
     const v = e.target.value;
     setTravelDate(v);
-    if (!v) setErrors((er) => ({ ...er, travelDate: "" }));
-    else setErrors((er) => ({ ...er, travelDate: validators.travelDate(v) }));
+    setErrors((er) => ({
+      ...er,
+      travelDate: v ? validators.travelDate(v) : "",
+    }));
   };
 
   const hardRequiredOk =
@@ -319,8 +328,7 @@ export default function BusBookingDashboard() {
     form.phone &&
     form.gender &&
     form.pickup &&
-    form.drop &&
-    form.payment;
+    form.drop;
 
   const noVisibleErrors =
     !errors.fname &&
@@ -329,11 +337,62 @@ export default function BusBookingDashboard() {
     !errors.gender &&
     !errors.pickup &&
     !errors.drop &&
-    !errors.payment &&
     !errors.travelDate;
 
   const canProceed = hardRequiredOk && noVisibleErrors;
 
+  /* ---------------------------- confirm booking ---------------------------- */
+  const handleConfirmBooking = async () => {
+    try {
+      const bookingPayload = {
+        email,
+        busId,
+        travelDate,
+        seats: [...selected],
+        passenger: {
+          fname: form.fname,
+          lname: form.lname,
+          phone: form.phone,
+          gender: form.gender,
+        },
+        pickup: form.pickup,
+        drop: form.drop,
+        payment: form.payment || "Card",
+      };
+
+      await createBooking(bookingPayload);
+      toast.success("Booking confirmed successfully!");
+
+      // mark booked seats by gender locally
+      if (form.gender === "Male") {
+        setBookedGents((prev) => new Set([...prev, ...selected]));
+      } else if (form.gender === "Female") {
+        setBookedLadies((prev) => new Set([...prev, ...selected]));
+      }
+
+      // create passenger record if new
+      if (!passenger) {
+        const passengerPayload = {
+          email,
+          fname: form.fname,
+          lname: form.lname,
+          phone: form.phone,
+          gender: form.gender,
+        };
+        await createPassenger(passengerPayload);
+        toast.success("Passenger created successfully!");
+        setPassenger(passengerPayload);
+      }
+
+      setSelected(new Set());
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message || "Booking failed, please try again."
+      );
+    }
+  };
+
+  /* ------------------------------------ UI ---------------------------------- */
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#2563EB]/10 to-[#16A34A]/10">
@@ -346,6 +405,7 @@ export default function BusBookingDashboard() {
       </div>
     );
   }
+
   if (err) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#2563EB]/10 to-[#16A34A]/10">
@@ -374,10 +434,10 @@ export default function BusBookingDashboard() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Left Panel */}
+          {/* Left side */}
           <section className="lg:col-span-2">
             <div className="bg-white/95 backdrop-blur-sm rounded-2xl border border-[#2563EB]/20 shadow-lg p-6">
-              {/* Bus & Date Selection */}
+              {/* Step 1: Bus + Date */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -419,10 +479,10 @@ export default function BusBookingDashboard() {
 
               {!(busId && travelDate) ? (
                 <div className="text-center py-12 border-2 border-dashed border-[#2563EB]/20 rounded-xl bg-[#F9FAFB]">
-                  <div className="text-gray-500 text-lg font-medium mb-2">
+                  <div className="text-gray-600 text-lg font-medium mb-2">
                     Select a Bus and Travel Date
                   </div>
-                  <p className="text-gray-400 text-sm">
+                  <p className="text-gray-500 text-sm">
                     Choose your preferred bus and travel date to view available
                     seats
                   </p>
@@ -431,7 +491,7 @@ export default function BusBookingDashboard() {
                 <>
                   <Legend />
 
-                  {/* Pickup Points */}
+                  {/* Pickups quick view */}
                   {pickups?.length > 0 && (
                     <div className="mt-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">
@@ -455,23 +515,23 @@ export default function BusBookingDashboard() {
                     </div>
                   )}
 
-                  {/* Seat Map */}
+                  {/* Seat map */}
                   <div className="mt-8">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
                       Select Your Seats
                     </h3>
 
-                    {/* Driver Section */}
+                    {/* Driver */}
                     <div className="mb-8 text-center">
                       <div className="bg-[#F9FAFB] border border-[#2563EB]/20 rounded-xl py-4 px-6 inline-block">
                         <div className="text-sm font-medium text-gray-700 mb-2">
                           Driver
                         </div>
-                        <div className="w-24 h-8 bg-gray-300 rounded mx-auto"></div>
+                        <div className="w-24 h-8 bg-gray-300 rounded mx-auto" />
                       </div>
                     </div>
 
-                    {/* Seats Grid */}
+                    {/* Grid */}
                     <div className="space-y-6">
                       {seatLayout.map((rowData) => (
                         <div
@@ -527,7 +587,7 @@ export default function BusBookingDashboard() {
                     </div>
                   </div>
 
-                  {/* Passenger Details */}
+                  {/* Passenger details */}
                   <div className="mt-8">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
                       Passenger Details
@@ -544,6 +604,7 @@ export default function BusBookingDashboard() {
                       className="grid grid-cols-1 md:grid-cols-2 gap-4"
                       disabled={selected.size === 0}
                     >
+                      {/* text inputs */}
                       {[
                         { label: "First Name", field: "fname", type: "text" },
                         { label: "Last Name", field: "lname", type: "text" },
@@ -560,7 +621,7 @@ export default function BusBookingDashboard() {
                           <input
                             type={type}
                             className="w-full rounded-lg border border-[#2563EB]/30 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB] transition-colors"
-                            value={form[field]}
+                            value={form[field] || ""}
                             onChange={handleChange(field)}
                             onBlur={handleBlur(field)}
                             placeholder={label}
@@ -572,7 +633,7 @@ export default function BusBookingDashboard() {
                           )}
                         </div>
                       ))}
-
+                      {/* selects */}
                       {[
                         {
                           label: "Gender",
@@ -601,7 +662,7 @@ export default function BusBookingDashboard() {
                           </label>
                           <select
                             className="w-full rounded-lg border border-[#2563EB]/30 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB] transition-colors"
-                            value={form[field]}
+                            value={form[field] || ""}
                             onChange={handleChange(field)}
                             onBlur={handleBlur(field)}
                           >
@@ -626,7 +687,7 @@ export default function BusBookingDashboard() {
             </div>
           </section>
 
-          {/* Right Panel - Summary */}
+          {/* Right: Summary */}
           {busId && (
             <aside className="lg:col-span-1">
               <div className="bg-white/95 backdrop-blur-sm rounded-2xl border border-[#2563EB]/20 shadow-lg p-6 sticky top-6">
@@ -637,11 +698,13 @@ export default function BusBookingDashboard() {
                 <div className="space-y-4">
                   <SummaryRow
                     label="Bus"
-                    value={`${selectedBus?.busNo || ""} (${selectedBus?.type})`}
+                    value={`${selectedBus?.busNo || ""} (${
+                      selectedBus?.type || "-"
+                    })`}
                   />
-                  <SummaryRow label="Route" value={route} />
-                  <SummaryRow label="Departure" value={depart} />
-                  <SummaryRow label="Frequency" value={frequency} />
+                  <SummaryRow label="Route" value={route || "-"} />
+                  <SummaryRow label="Departure" value={depart || "-"} />
+                  <SummaryRow label="Frequency" value={frequency || "-"} />
                   <SummaryRow label="Travel Date" value={travelDate || "-"} />
                   <SummaryRow
                     label="Price per seat"
@@ -681,22 +744,37 @@ export default function BusBookingDashboard() {
                 <button
                   type="button"
                   disabled={!canProceed}
-                  onClick={() => {
-                    alert(
-                      [
-                        `Proceeding to checkout`,
-                        `Bus: ${selectedBus?.busNo}`,
-                        `Date: ${travelDate}`,
-                        `Seats: ${[...selected].join(", ")}`,
-                        `Passenger: ${`${form.fname} ${form.lname}`.trim()} (${
-                          form.gender
-                        }), ${form.phone}`,
-                        `Pickup: ${form.pickup} • Drop: ${form.drop}`,
-                        `Payment: ${form.payment}`,
-                        `Total: LKR ${subtotal.toFixed(2)}`,
-                      ].join("\n")
-                    );
-                  }}
+                  onClick={() =>
+                    toast.custom((t) => (
+                      <div className="rounded-xl border bg-white p-4 shadow-xl w-[340px]">
+                        <h3 className="text-lg font-semibold mb-2">
+                          Confirm Booking
+                        </h3>
+                        <p className="text-sm text-gray-700 mb-4">
+                          Are you sure you want to confirm booking for{" "}
+                          <strong>{selected.size}</strong> seat(s) on{" "}
+                          <strong>{selectedBus?.busNo}</strong>?
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => toast.dismiss(t.id)}
+                            className="px-4 py-2 rounded-lg border text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={async () => {
+                              toast.dismiss(t.id);
+                              await handleConfirmBooking();
+                            }}
+                            className="px-4 py-2 rounded-lg bg-[#16A34A] text-white text-sm"
+                          >
+                            Confirm
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  }
                   className={`w-full mt-6 py-3 px-4 rounded-lg font-semibold text-white transition-all duration-200 ${
                     canProceed
                       ? "bg-[#16A34A] hover:bg-[#138535] shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
@@ -720,67 +798,50 @@ export default function BusBookingDashboard() {
   );
 }
 
+/* ---------------------------- Seat button widget --------------------------- */
 function SeatButton({ number, status, onToggle }) {
-  const config = {
-    available: {
-      bg: "bg-white border border-[#2563EB] hover:bg-[#2563EB] hover:text-white",
-      text: "text-gray-900",
-    },
-    selected: {
-      bg: "bg-[#16A34A] border border-[#16A34A] text-white",
-      text: "text-white",
-    },
-    bookedGent: {
-      bg: "bg-[#2563EB] border border-[#2563EB] text-white cursor-not-allowed",
-      text: "text-white",
-    },
-    bookedLady: {
-      bg: "bg-pink-500 border border-pink-500 text-white cursor-not-allowed",
-      text: "text-white",
-    },
-    reserved: {
-      bg: "bg-gray-400 border border-gray-400 text-white cursor-not-allowed",
-      text: "text-white",
-    },
-    unavailable: {
-      bg: "bg-gray-700 border border-gray-700 text-white cursor-not-allowed",
-      text: "text-white",
-    },
-  }[status];
-
-  const isDisabled = status !== "available" && status !== "selected";
+  const palette = {
+    available:
+      "bg-white border border-[#2563EB] text-gray-900 hover:bg-[#2563EB] hover:text-white",
+    selected: "bg-[#16A34A] border border-[#16A34A] text-white",
+    bookedGent:
+      "bg-[#2563EB] border border-[#2563EB] text-white cursor-not-allowed",
+    bookedLady:
+      "bg-pink-500 border border-pink-500 text-white cursor-not-allowed",
+    unavailable:
+      "bg-gray-700 border border-gray-700 text-white cursor-not-allowed",
+  };
+  const cls = palette[status] || palette.available;
+  const disabled = status !== "available" && status !== "selected";
 
   return (
     <button
       type="button"
-      disabled={isDisabled}
+      disabled={disabled}
       onClick={() => onToggle(number)}
-      className={`w-12 h-12 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center ${
-        config.bg
-      } ${config.text} ${!isDisabled ? "hover:scale-105" : ""}`}
+      className={`w-12 h-12 rounded-lg font-semibold transition-all flex items-center justify-center ${cls}`}
     >
       {number}
     </button>
   );
 }
 
+/* --------------------------------- Legend --------------------------------- */
 function Legend() {
   const items = [
     { label: "Available", color: "bg-white border border-[#2563EB]" },
     { label: "Selected", color: "bg-[#16A34A]" },
     { label: "Booked (Male)", color: "bg-[#2563EB]" },
     { label: "Booked (Female)", color: "bg-pink-500" },
-    { label: "Reserved", color: "bg-gray-400" },
     { label: "Unavailable", color: "bg-gray-700" },
   ];
-
   return (
     <div className="mb-6">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Seat Legend</h3>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {items.map((item) => (
           <div key={item.label} className="flex items-center gap-2">
-            <div className={`w-4 h-4 rounded ${item.color}`}></div>
+            <span className={`inline-block w-4 h-4 rounded ${item.color}`} />
             <span className="text-xs text-gray-600">{item.label}</span>
           </div>
         ))}
@@ -789,12 +850,13 @@ function Legend() {
   );
 }
 
+/* ------------------------------- Summary row ------------------------------- */
 function SummaryRow({ label, value }) {
   return (
-    <div className="flex justify-between items-center text-sm">
+    <div className="flex items-center justify-between text-sm">
       <span className="text-gray-600">{label}</span>
-      <span className="font-semibold text-gray-900 text-right">
-        {value || "-"}
+      <span className="font-medium text-gray-900 text-right break-words">
+        {value ?? "-"}
       </span>
     </div>
   );

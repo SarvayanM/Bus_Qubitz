@@ -16,7 +16,7 @@ import Home from "./pages/Home";
 import WelcomePage from "./pages/WelcomePage";
 import Signup from "./pages/passenger/Signup";
 import Login from "./pages/passenger/Login";
-import Logout from "./pages/passenger/Logout"
+import Logout from "./pages/passenger/Logout";
 import BusBookingDashboard from "./pages/BusBookingDashboard";
 
 import AddBus from "./pages/admin/AddBus";
@@ -26,7 +26,7 @@ function AppContent() {
   const location = useLocation();
 
   // Pages that should NOT show the background image
-  const NO_BG_PATHS = new Set(["/", "/about", "/contact"]);
+  const NO_BG_PATHS = new Set(["/", "/about", "/contact", "/home"]);
   // Pages that hide the navbar
   const HIDE_NAV_PATHS = new Set(["/login", "/signup", "/forgotPassword"]);
 
@@ -36,7 +36,7 @@ function AppContent() {
 
   // keep role in sync with localStorage
   useEffect(() => {
-    setUserRole(localStorage.getItem("role") );
+    setUserRole(localStorage.getItem("role"));
   }, [pathname]);
 
   const roleContextValue = {
@@ -47,7 +47,6 @@ function AppContent() {
       else localStorage.removeItem("role");
     },
   };
-  
 
   return (
     <RoleContext.Provider value={roleContextValue}>
@@ -87,7 +86,7 @@ function AppContent() {
         <main className={`flex-1 ${hideNavbar ? "" : "pt-6"}`}>
           <Routes>
             <Route path="/home" element={<Home />} />
-             <Route path="/" element={<WelcomePage />} />
+            <Route path="/" element={<WelcomePage />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/login" element={<Login />} />
             <Route path="/logout" element={<Logout />} />
@@ -95,7 +94,6 @@ function AppContent() {
               path="/busBookingDashboard"
               element={<BusBookingDashboard />}
             />
-           
 
             <Route path="/addBus" element={<AddBus />} />
           </Routes>

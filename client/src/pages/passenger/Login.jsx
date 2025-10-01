@@ -71,9 +71,9 @@ function Login() {
       document.cookie = `email=${encodeURIComponent(email)}; path=/; max-age=${
         7 * 24 * 60 * 60
       }; Secure; SameSite=Strict`;
-
+      
       notify("Login successful!", "success");
-      navigate("/");
+      navigate("/home");
     } catch (error) {
       const errorMessages = {
         "auth/user-not-found": "No user found with this email.",
