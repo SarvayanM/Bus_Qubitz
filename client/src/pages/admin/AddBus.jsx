@@ -28,6 +28,7 @@ export default function AddBus() {
   }, []);
 
   const initialForm = {
+    busName: "",
     busNo: "",
     seats: "",
     from: "",
@@ -116,6 +117,15 @@ export default function AddBus() {
     }
 
     const busRegNoPattern = /^[A-Z]{2}\s[A-Z]{2,3}\s\d{4}$/;
+    const busNamePattern = /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim())
+
+    if (!form.busName.trim()) {
+      errors.push("Bus Name is required.");
+    } else if (!busNamePattern.test(form.busName.trim().toUpperCase())) {
+      errors.push(
+        "Invalid Bus Name."
+      );
+    }
 
     if (!form.busNo.trim()) {
       errors.push("Bus Registration No is required.");
@@ -242,6 +252,7 @@ export default function AddBus() {
     if (!ok) return;
 
     const payload = {
+      busName: form.busName.trim().toUpperCase(),
       busNo: form.busNo.trim().toUpperCase(),
       seats: Number(form.seats),
       route: { from: form.from, to: form.to },
@@ -335,6 +346,26 @@ export default function AddBus() {
               Basic Information
             </h2>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Bus Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={form.busName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, busName: e.target.value }))
+                  }
+                  onBlur={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      busName: e.target.value.toUpperCase(),
+                    }))
+                  }
+                  placeholder="e.g., Wijitha"
+                  className="w-full rounded-xl border border-[#2563EB]/30 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB] transition-colors"
+                  autoComplete="off"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Bus Registration No <span className="text-red-500">*</span>

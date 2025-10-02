@@ -6,9 +6,8 @@ const BookingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    bus: {
+    busId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Bus",
       required: true,
     },
     travelDate: {

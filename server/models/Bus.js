@@ -31,6 +31,12 @@ const PickupSchema = new mongoose.Schema(
 
 const BusSchema = new mongoose.Schema(
   {
+    busName: {
+      type: String,
+      required: [true],
+      trim: true,
+      unique: true,
+    },
     busNo: {
       type: String,
       required: [true, "Bus Registration No is required"],

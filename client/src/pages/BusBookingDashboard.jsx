@@ -4,7 +4,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { useSearchParams } from "react-router-dom";
 import Cookies from "js-cookie";
 import { getBuses, getBusById } from "../api/bus";
-import { createBooking } from "../api/booking";
+import { createBooking, getBookingsByBusAndDate } from "../api/booking";
 import { createPassenger, getPassengerByEmail } from "../api/passenger";
 
 /* --------------------------------- helpers -------------------------------- */
@@ -39,6 +39,7 @@ export default function BusBookingDashboard() {
   const [email, setEmail] = useState("");
 
   // derived bus details
+  const [busName, setBusName] = useState("");
   const [route, setRoute] = useState("");
   const [depart, setDepart] = useState("");
   const [pricePerSeat, setPricePerSeat] = useState(0);
@@ -132,6 +133,7 @@ export default function BusBookingDashboard() {
       clearHydrated();
       return;
     }
+    setBusName(found?.busName || "");
     setRoute(`${found?.route?.from || ""} → ${found?.route?.to || ""}`);
     setDepart(found?.schedule?.departure || "");
     setPricePerSeat(Number(found?.price || 0));
@@ -148,16 +150,23 @@ export default function BusBookingDashboard() {
       try {
         const b = await getBusById(busId);
         if (!mounted || !b) return;
+
+        // hydrate bus details
+        setBusName(b?.busName || "");
         setRoute(`${b?.route?.from || ""} → ${b?.route?.to || ""}`);
         setDepart(b?.schedule?.departure || "");
         setPricePerSeat(Number(b?.price || 0));
         setTotalSeats(Number(b?.seats || 0));
         setPickups(Array.isArray(b?.pickups) ? b.pickups : []);
         setFrequency(b?.frequency || "");
-        setBookedGents(new Set(b?.bookedByGents || []));
-        setBookedLadies(new Set(b?.bookedByLadies || []));
         setUnavailableSeats(new Set(b?.unavailable || []));
         setSelected(new Set());
+
+        // fetch bookings for this bus + date
+        const bookingData = await getBookingsByBusAndDate(busId, travelDate);
+        setBookedGents(new Set(bookingData.bookedByGents || []));
+        setBookedLadies(new Set(bookingData.bookedByLadies || []));
+        setUnavailableSeats(new Set(bookingData.unavailableSeats || []))
       } catch (e) {
         setErr(e?.message || "Failed to load bus details");
       }
@@ -167,7 +176,10 @@ export default function BusBookingDashboard() {
     };
   }, [busId, travelDate]);
 
+  console.log(bookedGents)
+
   function clearHydrated() {
+    setBusName("");
     setRoute("");
     setDepart("");
     setPricePerSeat(0);
@@ -451,7 +463,7 @@ export default function BusBookingDashboard() {
                     <option value="">Choose a bus...</option>
                     {buses.map((b) => (
                       <option key={b._id} value={b._id}>
-                        {b.busNo} — {b.route?.from} → {b.route?.to} ({b.type})
+                        {b.busName} — {b.route?.from} → {b.route?.to} ({b.type})
                       </option>
                     ))}
                   </select>

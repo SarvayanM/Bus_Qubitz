@@ -12,6 +12,7 @@ const isHttpsUrl = (v) => /^https?:\/\/.+/i.test(v || "");
 export const createBus = async (req, res) => {
   try {
     const {
+      busName,
       busNo,
       seats,
       price,
@@ -30,6 +31,7 @@ export const createBus = async (req, res) => {
         .json({ success: false, message: "Valid imageUrl is required" });
     }
     if (
+      !busName ||
       !busNo ||
       !seats ||
       !price ||
@@ -44,6 +46,7 @@ export const createBus = async (req, res) => {
     }
 
     const doc = new Bus({
+      busName,
       busNo,
       seats,
       price,

@@ -45,7 +45,7 @@ export const createBooking = async (req, res) => {
 
     const booking = await Booking.create({
       email: email,
-      bus: busId,
+      busId,
       travelDate,
       seats,
       passenger,
@@ -66,5 +66,39 @@ export const getBookings = async (req, res) => {
     res.json({ success: true, data: bookings });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const getBusBookings = async (req, res) => {
+  try {
+    const { busId, travelDate } = req.params;
+
+    const bookings = await Booking.find({ busId, travelDate }).lean();
+    console.log(bookings)
+    // Separate seats by status
+    const bookedByGents = [];
+    const bookedByLadies = [];
+    const unavailableSeats = [];
+
+    bookings.forEach((b) => {
+      if (b.status === "unavailable") {
+        unavailableSeats.push(...b.seats);
+      } else if (b.passenger?.gender === "Male") {
+        
+        bookedByGents.push(...b.seats);
+      } else if (b.passenger?.gender === "Female") {
+        bookedByLadies.push(...b.seats);
+      }
+    });
+
+    res.json({
+      success: true,
+      data: { bookedByGents, bookedByLadies, unavailableSeats },
+    });
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to load bookings" });
   }
 };

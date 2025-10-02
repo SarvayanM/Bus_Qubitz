@@ -227,6 +227,7 @@ export default function Home({ userName = "" }) {
 function BusCard({ bus }) {
   const {
     _id: id,
+    busName="",
     route = {},
     schedule = {},
     seats = 0,
@@ -262,6 +263,9 @@ function BusCard({ bus }) {
           <h3 className="text-xl font-bold text-gray-900 mb-1">
             {from} <span className="text-[#2563EB]">→</span> {to}
           </h3>
+          <p className="text-gray-600 text-sm">
+            Bus Name: <span className="font-semibold">{busName}</span>
+          </p>
           <p className="text-gray-600 text-sm">
             Bus No: <span className="font-semibold">{busNo}</span>
           </p>
