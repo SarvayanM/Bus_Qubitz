@@ -6,6 +6,7 @@ import "react-toastify/dist/ReactToastify.css";
 import auth, { db } from "../../services/firebaseAuth";
 import { getDoc, doc } from "firebase/firestore";
 import RoleContext from "../../components/common/RoleContext";
+import { getCompanyIdByEmail } from "../../api/company";
 
 function Login() {
   const navigate = useNavigate();
@@ -67,11 +68,21 @@ function Login() {
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const role = userDoc.data()?.role || "passenger";
 
-      persistSession(role, email);
-      document.cookie = `email=${encodeURIComponent(email)}; path=/; max-age=${
-        7 * 24 * 60 * 60
-      }; Secure; SameSite=Strict`;
-      
+      if (role === "busOwner") {
+   
+        const companyId = await getCompanyIdByEmail(email);
+        console.log(companyId);
+        persistSession(role, companyId);
+        document.cookie = `companyId=${encodeURIComponent(
+          companyId
+        )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
+      } else if (role === "passenger") {
+        persistSession(role, email);
+        document.cookie = `email=${encodeURIComponent(
+          email
+        )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
+      }
+
       notify("Login successful!", "success");
       navigate("/home");
     } catch (error) {
@@ -249,6 +260,13 @@ function Login() {
                 className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
               >
                 Create an account
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/companyRegister")}
+                className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
+              >
+                Register Your Company Here
               </button>
               <button
                 type="button"

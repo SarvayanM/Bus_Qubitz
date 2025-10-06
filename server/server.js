@@ -6,6 +6,7 @@ import cors from "cors";
 import busRoutes from "./routes/busRoutes.js";
 import passengerRoutes from "./routes/passengerRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import companyRoutes from "./routes/companyRoutes.js";
 import dotenv from "dotenv";
 
 const app = express();
@@ -20,6 +21,7 @@ console.log("1");
 app.use("/api/passengers", passengerRoutes);
 console.log("2");
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/companies", companyRoutes);
 
 // Errors: 404 fallback
 app.use((req, res) => {

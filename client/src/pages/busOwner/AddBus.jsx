@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import toast, { Toaster } from "react-hot-toast";
+import Cookies from "js-cookie"; // ✅ add this
 import VirtualizedSelect from "../../components/common/VirtualizedSelect";
 import { createBus } from "../../api/bus";
 import { SRI_LANKA_LOCATIONS } from "../../data/sriLankaLocations";
@@ -27,7 +28,8 @@ export default function AddBus() {
     return uniq.sort((a, b) => a.localeCompare(b));
   }, []);
 
-  const initialForm = {
+  const makeInitialForm = (companyId = "") => ({
+    companyId,
     busName: "",
     busNo: "",
     seats: "",
@@ -44,11 +46,17 @@ export default function AddBus() {
     })),
     price: "",
     imageUrl: "",
-  };
+  });
 
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(makeInitialForm());
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+
+  // ✅ read cookie correctly and write into form.companyId
+  useEffect(() => {
+    const cid = Cookies.get("companyId") || ""; // NOTE: camelCase key
+    setForm((f) => ({ ...f, companyId: cid }));
+  }, []);
 
   const setPickup = (idx, key, val) => {
     setForm((f) => {
@@ -93,7 +101,10 @@ export default function AddBus() {
 
       const res = await fetch(
         `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-        { method: "POST", body: fd }
+        {
+          method: "POST",
+          body: fd,
+        }
       );
       if (!res.ok) throw new Error(`Cloudinary upload failed (${res.status})`);
 
@@ -117,14 +128,12 @@ export default function AddBus() {
     }
 
     const busRegNoPattern = /^[A-Z]{2}\s[A-Z]{2,3}\s\d{4}$/;
-    const busNamePattern = /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim())
+    const busNamePattern = /^[A-Za-z][A-Za-z\s'.-]{1,49}$/; // ✅ keep as RegExp
 
     if (!form.busName.trim()) {
       errors.push("Bus Name is required.");
-    } else if (!busNamePattern.test(form.busName.trim().toUpperCase())) {
-      errors.push(
-        "Invalid Bus Name."
-      );
+    } else if (!busNamePattern.test(form.busName.trim())) {
+      errors.push("Invalid Bus Name.");
     }
 
     if (!form.busNo.trim()) {
@@ -202,6 +211,13 @@ export default function AddBus() {
       }
     });
 
+    // ✅ companyId presence (must exist to add bus for a company)
+    if (!form.companyId) {
+      errors.push(
+        "Missing company context. Please log in as a bus owner again."
+      );
+    }
+
     return errors;
   };
 
@@ -252,6 +268,7 @@ export default function AddBus() {
     if (!ok) return;
 
     const payload = {
+      companyId: form.companyId,
       busName: form.busName.trim().toUpperCase(),
       busNo: form.busNo.trim().toUpperCase(),
       seats: Number(form.seats),
@@ -271,7 +288,9 @@ export default function AddBus() {
     try {
       await createBus(payload);
       toast.success("Bus added successfully.", { position: "top-center" });
-      setForm(initialForm);
+      // ✅ preserve companyId when clearing
+      const cid = Cookies.get("companyId") || "";
+      setForm(makeInitialForm(cid));
       setUploadError("");
     } catch (err) {
       const msg =
@@ -303,7 +322,7 @@ export default function AddBus() {
           onSubmit={handleSubmit}
           className="bg-white/90 backdrop-blur-sm rounded-2xl border border-[#2563EB]/20 shadow-lg p-6 lg:p-8"
         >
-          {/* Image Upload Section */}
+          {/* Image Upload */}
           <div className="mb-8">
             <label className="block text-lg font-semibold text-gray-900 mb-4">
               Bus Image <span className="text-red-500">*</span>
@@ -340,7 +359,7 @@ export default function AddBus() {
             </div>
           </div>
 
-          {/* Bus Basic Information */}
+          {/* Basic Information */}
           <div className="mb-8">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">
               Basic Information
@@ -593,11 +612,12 @@ export default function AddBus() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row justify-end gap-4 pt-6 border-t border-gray-200">
+          <div className="flex flex-col sm:flex-row justify-end gap-4 pt-6 border-top border-gray-200">
             <button
               type="button"
               onClick={() => {
-                setForm(initialForm);
+                const cid = Cookies.get("companyId") || "";
+                setForm(makeInitialForm(cid)); // ✅ preserve companyId
                 setUploadError("");
                 toast.success("Form cleared successfully.");
               }}

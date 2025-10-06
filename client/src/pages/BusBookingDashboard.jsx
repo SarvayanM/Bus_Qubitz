@@ -39,7 +39,6 @@ export default function BusBookingDashboard() {
   const [email, setEmail] = useState("");
 
   // derived bus details
-  const [busName, setBusName] = useState("");
   const [route, setRoute] = useState("");
   const [depart, setDepart] = useState("");
   const [pricePerSeat, setPricePerSeat] = useState(0);
@@ -75,10 +74,12 @@ export default function BusBookingDashboard() {
   });
 
   /* --------------------------------- effects -------------------------------- */
+  // get logged-in email (cookie)
   useEffect(() => {
     setEmail(Cookies.get("email") || "");
   }, []);
 
+  // load buses (for the select)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -97,11 +98,13 @@ export default function BusBookingDashboard() {
     };
   }, []);
 
+  // pick up busId from query string (?busId=...)
   useEffect(() => {
     const q = searchParams.get("busId");
     if (q) setBusId(q);
   }, [searchParams]);
 
+  // fetch passenger profile by email (prefill form)
   useEffect(() => {
     if (!email) return;
     (async () => {
@@ -120,39 +123,24 @@ export default function BusBookingDashboard() {
         } else {
           setForm((prev) => ({ ...prev, email }));
         }
-      } catch (err) {
+      } catch {
         // silent fail into manual form entry
-        console.error(err);
       }
     })();
   }, [email]);
 
+  // hydrate bus details when busId changes
   useEffect(() => {
-    const found = buses.find((b) => b._id === busId);
-    if (!found) {
+    if (!busId) {
       clearHydrated();
       return;
     }
-    setBusName(found?.busName || "");
-    setRoute(`${found?.route?.from || ""} → ${found?.route?.to || ""}`);
-    setDepart(found?.schedule?.departure || "");
-    setPricePerSeat(Number(found?.price || 0));
-    setTotalSeats(Number(found?.seats || 0));
-    setPickups(Array.isArray(found?.pickups) ? found.pickups : []);
-    setFrequency(found?.frequency || "");
-    setSelected(new Set());
-  }, [busId, buses]);
-
-  useEffect(() => {
-    if (!busId || !travelDate) return;
     let mounted = true;
     (async () => {
       try {
         const b = await getBusById(busId);
         if (!mounted || !b) return;
 
-        // hydrate bus details
-        setBusName(b?.busName || "");
         setRoute(`${b?.route?.from || ""} → ${b?.route?.to || ""}`);
         setDepart(b?.schedule?.departure || "");
         setPricePerSeat(Number(b?.price || 0));
@@ -161,12 +149,6 @@ export default function BusBookingDashboard() {
         setFrequency(b?.frequency || "");
         setUnavailableSeats(new Set(b?.unavailable || []));
         setSelected(new Set());
-
-        // fetch bookings for this bus + date
-        const bookingData = await getBookingsByBusAndDate(busId, travelDate);
-        setBookedGents(new Set(bookingData.bookedByGents || []));
-        setBookedLadies(new Set(bookingData.bookedByLadies || []));
-        setUnavailableSeats(new Set(bookingData.unavailableSeats || []))
       } catch (e) {
         setErr(e?.message || "Failed to load bus details");
       }
@@ -174,12 +156,31 @@ export default function BusBookingDashboard() {
     return () => {
       mounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busId]);
+
+  // fetch bookings for a given bus + date
+  useEffect(() => {
+    if (!busId || !travelDate) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const bookingData = await getBookingsByBusAndDate(busId, travelDate);
+        if (!mounted) return;
+        setBookedGents(new Set(bookingData?.bookedByGents || []));
+        setBookedLadies(new Set(bookingData?.bookedByLadies || []));
+        setUnavailableSeats(new Set(bookingData?.unavailableSeats || []));
+        setSelected(new Set());
+      } catch (e) {
+        setErr(e?.message || "Failed to load bookings");
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, [busId, travelDate]);
 
-  console.log(bookedGents)
-
   function clearHydrated() {
-    setBusName("");
     setRoute("");
     setDepart("");
     setPricePerSeat(0);
@@ -187,6 +188,9 @@ export default function BusBookingDashboard() {
     setPickups([]);
     setFrequency("");
     setSelected(new Set());
+    setBookedGents(new Set());
+    setBookedLadies(new Set());
+    setUnavailableSeats(new Set());
   }
 
   /* --------------------------------- derived -------------------------------- */

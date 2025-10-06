@@ -4,7 +4,22 @@ import Bus from "../models/Bus.js";
 
 // small URL sanity check (same as model)
 const isHttpsUrl = (v) => /^https?:\/\/.+/i.test(v || "");
+const pad2 = (n) => String(n).padStart(2, "0");
+const ymd = (d) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
+function addDays(dateStr, days) {
+  const [Y, M, D] = dateStr.split("-").map(Number);
+  const d = new Date(Y, M - 1, D);
+  d.setDate(d.getDate() + days);
+  return ymd(d);
+}
+
+function toMinutes(hhmm) {
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
 /**
  * POST /api/buses
  * Create a new bus with full validation.
@@ -12,6 +27,7 @@ const isHttpsUrl = (v) => /^https?:\/\/.+/i.test(v || "");
 export const createBus = async (req, res) => {
   try {
     const {
+      companyId,
       busName,
       busNo,
       seats,
@@ -31,6 +47,7 @@ export const createBus = async (req, res) => {
         .json({ success: false, message: "Valid imageUrl is required" });
     }
     if (
+      !companyId ||
       !busName ||
       !busNo ||
       !seats ||
@@ -46,6 +63,7 @@ export const createBus = async (req, res) => {
     }
 
     const doc = new Bus({
+      companyId,
       busName,
       busNo,
       seats,
@@ -134,3 +152,71 @@ export const getBusById = async (req, res) => {
       .json({ success: false, message: "Failed to fetch bus" });
   }
 };
+
+/**
+ * GET /api/buses/by-company/:companyId
+ */
+export async function getBusesByCompany(req, res) {
+  try {
+    const { companyId } = req.params;
+    if (!companyId) {
+      return res.status(400).json({ success: false, message: "Missing companyId" });
+    }
+    const list = await Bus.find({ companyId })
+      .select("_id busName busNo route schedule frequency type price seats pickups companyId")
+      .lean();
+    return res.json({ success: true, data: list });
+  } catch (err) {
+    console.error("getBusesByCompany error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}
+
+/**
+ * GET /api/buses/:id/available-dates?from=YYYY-MM-DD&days=30
+ * - Uses bus.frequency ("Daily" | "Every Other Day") and bus.schedule.departure.
+ * - Excludes past dates and (optionally) today if within 2 hours of departure.
+ */
+export async function getAvailableDatesForBus(req, res) {
+  try {
+    const { id } = req.params;
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid bus id" });
+    }
+    const bus = await Bus.findById(id).select("frequency schedule").lean();
+    if (!bus) {
+      return res.status(404).json({ success: false, message: "Bus not found" });
+    }
+
+    const from = req.query.from || ymd(new Date());
+    const days = Math.max(1, Math.min(120, Number(req.query.days || 30))); // cap to 120 for safety
+    const step = bus.frequency === "Every Other Day" ? 2 : 1;
+
+    // Exclude "today" if less than 2 hours to departure
+    const dep = toMinutes(bus?.schedule?.departure);
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const excludeToday =
+      from === ymd(now) && dep !== null && dep - nowMin < 120;
+
+    const out = [];
+    let current = from;
+
+    // If today is excluded, start from tomorrow
+    if (excludeToday) {
+      current = addDays(from, 1);
+    }
+
+    // Generate days based on frequency
+    for (let i = 0; i < days; i += step) {
+      const nextDate = i === 0 ? current : addDays(current, step);
+      current = nextDate;
+      out.push(nextDate);
+    }
+
+    return res.json({ success: true, data: out });
+  } catch (err) {
+    console.error("getAvailableDatesForBus error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}

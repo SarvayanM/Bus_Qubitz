@@ -31,6 +31,10 @@ const PickupSchema = new mongoose.Schema(
 
 const BusSchema = new mongoose.Schema(
   {
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+    },
     busName: {
       type: String,
       required: [true],

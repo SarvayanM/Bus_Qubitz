@@ -74,7 +74,7 @@ export const getBusBookings = async (req, res) => {
     const { busId, travelDate } = req.params;
 
     const bookings = await Booking.find({ busId, travelDate }).lean();
-    console.log(bookings)
+    console.log(bookings);
     // Separate seats by status
     const bookedByGents = [];
     const bookedByLadies = [];
@@ -84,7 +84,6 @@ export const getBusBookings = async (req, res) => {
       if (b.status === "unavailable") {
         unavailableSeats.push(...b.seats);
       } else if (b.passenger?.gender === "Male") {
-        
         bookedByGents.push(...b.seats);
       } else if (b.passenger?.gender === "Female") {
         bookedByLadies.push(...b.seats);
@@ -94,6 +93,25 @@ export const getBusBookings = async (req, res) => {
     res.json({
       success: true,
       data: { bookedByGents, bookedByLadies, unavailableSeats },
+    });
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to load bookings" });
+  }
+};
+
+export const getBookingListByBusAndDate = async (req, res) => {
+  try {
+    const { busId, travelDate } = req.params;
+
+    const bookings = await Booking.find({ busId, travelDate }).lean();
+    console.log(bookings)
+
+    res.json({
+      success: true,
+      data: { bookings },
     });
   } catch (err) {
     console.error(err);

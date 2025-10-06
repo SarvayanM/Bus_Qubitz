@@ -10,6 +10,7 @@ function Logout() {
   const { setUserRole } = useContext(RoleContext);
 
   useEffect(() => {
+    <Toster/>
     (async () => {
       try {
         const res = await logout();

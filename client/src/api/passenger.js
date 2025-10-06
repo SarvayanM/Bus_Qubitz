@@ -7,13 +7,21 @@ export async function createPassenger(payload) {
 }
 
 export async function getPassengerByEmail(email) {
-  console.log("hi")
-   console.log(email)
+  console.log("hi");
+  console.log(email);
   const { data } = await http.get(
     `/api/passengers?email=${encodeURIComponent(email)}`
   );
   if (!data?.success)
     throw new Error(data?.message || "Failed to load passenger");
+  return data.data;
+}
+
+/** UPDATE passenger by email */
+export async function updatePassengerByEmail(payload) {
+  // payload: { email, fname, lname, phone, gender }
+  const { data } = await http.put("/api/passengers/by-email", payload);
+  if (!data?.success) throw new Error(data?.message || "Update failed");
   return data.data;
 }
 

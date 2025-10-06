@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 
-export default function PassengerNavbar() {
+export default function BusOwnerNavbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
@@ -33,25 +33,32 @@ export default function PassengerNavbar() {
           <div className="hidden md:flex items-center gap-1">
             <NavLink
               to="/"
-              className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+              className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
             >
               Home
             </NavLink>
+
             <NavLink
-              to="/updateProfile"
-              className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+              to="/addBus"
+              className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
             >
-              Profile
+              Add Bus
             </NavLink>
             <NavLink
-              to="/busBookingDashboard"
-              className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+              to="/manageBuses"
+              className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
             >
-              Book Bus
+              Manage Buses
+            </NavLink>
+            <NavLink
+              to="/busBookingHistory"
+              className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
+            >
+              Booking History
             </NavLink>
             <NavLink
               to="/logout"
-              className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+              className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
             >
               Logout
             </NavLink>
@@ -99,28 +106,35 @@ export default function PassengerNavbar() {
             <div className="px-4 pt-2 pb-6 space-y-2">
               <NavLink
                 to="/"
-                className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+                className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
                 onClick={closeMobileMenu}
               >
                 Home
               </NavLink>
               <NavLink
-                to="/profile"
-                className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+                to="/dashboard"
+                className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
                 onClick={closeMobileMenu}
               >
-                Profile
+                Dashboard
               </NavLink>
               <NavLink
-                to="/busBookingDashboard"
-                className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+                to="/buses"
+                className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
                 onClick={closeMobileMenu}
               >
-                Book Bus
+                Manage Buses
+              </NavLink>
+              <NavLink
+                to="/bookings"
+                className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
+                onClick={closeMobileMenu}
+              >
+                Bookings
               </NavLink>
               <NavLink
                 to="/logout"
-                className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-white/10 hover:text-white"
+                className="px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 hover:text-white"
                 onClick={closeMobileMenu}
               >
                 Logout

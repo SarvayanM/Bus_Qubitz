@@ -9,6 +9,7 @@ import RoleContext from "./components/common/RoleContext";
 
 import Navbar from "./components/common/Navbar";
 import PassengerNavbar from "./components/common/PassengerNavbar";
+import BusOwnerNavbar from "./components/common/BusOwnerNavbar";
 
 import Footer from "./components/common/Footer";
 
@@ -18,8 +19,13 @@ import Signup from "./pages/passenger/Signup";
 import Login from "./pages/passenger/Login";
 import Logout from "./pages/passenger/Logout";
 import BusBookingDashboard from "./pages/BusBookingDashboard";
+import UpdateProfile from "./pages/passenger/updateProfile";
 
-import AddBus from "./pages/admin/AddBus";
+import AddBus from "./pages/busOwner/AddBus";
+import CompanyRegister from "./pages/busOwner/CompanyRegister";
+import BusBookingHistory from "./pages/busOwner/BusBookingHistory";
+
+import CompanyHistory from "./pages/admin/CompanyHistory";
 
 function AppContent() {
   const [userRole, setUserRole] = useState("");
@@ -74,8 +80,8 @@ function AppContent() {
           <header className="sticky top-0 z-50 bg-[#1D1E2C]/95 backdrop-blur-sm">
             {userRole === "passenger" ? (
               <PassengerNavbar />
-            ) : userRole === "admin" ? (
-              <AdminNavBar />
+            ) : userRole === "busOwner" ? (
+              <BusOwnerNavbar />
             ) : (
               <Navbar />
             )}
@@ -94,8 +100,11 @@ function AppContent() {
               path="/busBookingDashboard"
               element={<BusBookingDashboard />}
             />
-
+<Route path="/updateProfile" element={<UpdateProfile />} />
             <Route path="/addBus" element={<AddBus />} />
+            <Route path="/companyRegister" element={<CompanyRegister />} />
+            <Route path="/busBookingHistory" element={<BusBookingHistory />} />
+            <Route path="/companyHistory" element={<CompanyHistory />} />
           </Routes>
 
           <div className="h-8" />
