@@ -1,6 +1,14 @@
 // routes/busRoutes.js
 import { Router } from "express";
-import { createBus, getBus, getBusById, getBusesByCompany, getAvailableDatesForBus } from "../controllers/busController.js";
+import {
+  createBus,
+  getBus,
+  getBusById,
+  getBusesByCompany,
+  getAvailableDatesForBus,
+  updateBus,
+  removeBus,
+} from "../controllers/busController.js";
 
 const router = Router();
 
@@ -13,5 +21,10 @@ router.get("/by-company/:companyId", getBusesByCompany);
 // Upcoming/available dates (computed from bus schedule + frequency)
 router.get("/:id/available-dates", getAvailableDatesForBus);
 
+// Update one
+router.put("/:id", updateBus);
+
+// Delete one
+router.delete("/:id", removeBus);
 
 export default router;

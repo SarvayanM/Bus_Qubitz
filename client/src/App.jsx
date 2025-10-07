@@ -24,6 +24,7 @@ import UpdateProfile from "./pages/passenger/updateProfile";
 import AddBus from "./pages/busOwner/AddBus";
 import CompanyRegister from "./pages/busOwner/CompanyRegister";
 import BusBookingHistory from "./pages/busOwner/BusBookingHistory";
+import ManageBuses from "./pages/busOwner/ManageBuses";
 
 import CompanyHistory from "./pages/admin/CompanyHistory";
 
@@ -32,7 +33,13 @@ function AppContent() {
   const location = useLocation();
 
   // Pages that should NOT show the background image
-  const NO_BG_PATHS = new Set(["/", "/about", "/contact", "/home"]);
+  const NO_BG_PATHS = new Set([
+    "/",
+    "/about",
+    "/contact",
+    "/home",
+    "/manageBuses",
+  ]);
   // Pages that hide the navbar
   const HIDE_NAV_PATHS = new Set(["/login", "/signup", "/forgotPassword"]);
 
@@ -100,10 +107,11 @@ function AppContent() {
               path="/busBookingDashboard"
               element={<BusBookingDashboard />}
             />
-<Route path="/updateProfile" element={<UpdateProfile />} />
+            <Route path="/updateProfile" element={<UpdateProfile />} />
             <Route path="/addBus" element={<AddBus />} />
             <Route path="/companyRegister" element={<CompanyRegister />} />
             <Route path="/busBookingHistory" element={<BusBookingHistory />} />
+            <Route path="/manageBuses" element={<ManageBuses />} />
             <Route path="/companyHistory" element={<CompanyHistory />} />
           </Routes>
 

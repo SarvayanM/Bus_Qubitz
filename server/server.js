@@ -7,6 +7,7 @@ import busRoutes from "./routes/busRoutes.js";
 import passengerRoutes from "./routes/passengerRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import companyRoutes from "./routes/companyRoutes.js";
+import whatsappRoutes from "./routes/whatsappRoutes.js";
 import dotenv from "dotenv";
 
 const app = express();
@@ -22,6 +23,7 @@ app.use("/api/passengers", passengerRoutes);
 console.log("2");
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/companies", companyRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
 
 // Errors: 404 fallback
 app.use((req, res) => {

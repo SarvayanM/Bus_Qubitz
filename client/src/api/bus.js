@@ -19,7 +19,9 @@ export async function getBusById(id) {
 
 // GET /api/buses/by-company/:companyId
 export async function getBusesByCompany(companyId) {
-  const { data } = await http.get(`/api/buses/by-company/${encodeURIComponent(companyId)}`);
+  const { data } = await http.get(
+    `/api/buses/by-company/${encodeURIComponent(companyId)}`
+  );
   if (!data?.success) throw new Error(data?.message || "Failed to load buses");
   return data.data; // array
 }
@@ -29,7 +31,21 @@ export async function getAvailableDatesForBus(id, { from, days } = {}) {
   if (from) params.set("from", from);
   if (days) params.set("days", String(days));
   const qs = params.toString() ? `?${params.toString()}` : "";
-  const { data } = await http.get(`/api/buses/${encodeURIComponent(id)}/available-dates${qs}`);
+  const { data } = await http.get(
+    `/api/buses/${encodeURIComponent(id)}/available-dates${qs}`
+  );
   if (!data?.success) throw new Error(data?.message || "Failed to load dates");
   return data.data; // array of "YYYY-MM-DD"
+}
+
+export async function updateBus(id, payload) {
+  const { data } = await http.put(`/api/buses/${id}`, payload);
+  if (!data?.success) throw new Error(data?.message || "Update failed");
+  return data.data;
+}
+
+export async function deleteBus(id) {
+  const { data } = await http.delete(`/api/buses/${id}`);
+  if (!data?.success) throw new Error(data?.message || "Delete failed");
+  return data.data;
 }

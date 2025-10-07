@@ -20,6 +20,38 @@ function toMinutes(hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
 }
+
+/* sanitize allowed fields */
+function toUpdate(doc = {}) {
+  const out = {};
+  if (doc.companyId) out.companyId = doc.companyId;
+  if (doc.busName) out.busName = doc.busName;
+  if (doc.busNo) out.busNo = doc.busNo;
+  if (doc.seats != null) out.seats = Number(doc.seats);
+  if (doc.price != null) out.price = Number(doc.price);
+  if (doc.imageUrl != null) out.imageUrl = doc.imageUrl;
+  if (doc.type) out.type = doc.type;
+  if (doc.frequency) out.frequency = doc.frequency;
+
+  if (doc.route && typeof doc.route === "object") {
+    out.route = {
+      from: doc.route.from,
+      to: doc.route.to,
+    };
+  }
+  if (doc.schedule && typeof doc.schedule === "object") {
+    out.schedule = {
+      departure: doc.schedule.departure,
+      arrival: doc.schedule.arrival,
+      nextDayArrival: !!doc.schedule.nextDayArrival,
+    };
+  }
+  if (Array.isArray(doc.pickups)) {
+    out.pickups = doc.pickups.map((p) => ({ place: p.place, time: p.time }));
+  }
+  return out;
+}
+
 /**
  * POST /api/buses
  * Create a new bus with full validation.
@@ -160,10 +192,14 @@ export async function getBusesByCompany(req, res) {
   try {
     const { companyId } = req.params;
     if (!companyId) {
-      return res.status(400).json({ success: false, message: "Missing companyId" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing companyId" });
     }
     const list = await Bus.find({ companyId })
-      .select("_id busName busNo route schedule frequency type price seats pickups companyId")
+      .select(
+        "_id busName busNo route schedule frequency type price seats pickups companyId"
+      )
       .lean();
     return res.json({ success: true, data: list });
   } catch (err) {
@@ -181,7 +217,9 @@ export async function getAvailableDatesForBus(req, res) {
   try {
     const { id } = req.params;
     if (!id || !mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ success: false, message: "Invalid bus id" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid bus id" });
     }
     const bus = await Bus.findById(id).select("frequency schedule").lean();
     if (!bus) {
@@ -217,6 +255,63 @@ export async function getAvailableDatesForBus(req, res) {
     return res.json({ success: true, data: out });
   } catch (err) {
     console.error("getAvailableDatesForBus error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}
+
+/* PUT /api/buses/:id */
+export async function updateBus(req, res) {
+  try {
+    const { id } = req.params;
+    const payload = toUpdate(req.body || {});
+
+    // very light validations
+    if (!payload.busName || !payload.busNo) {
+      return res
+        .status(400)
+        .json({ success: false, message: "busName and busNo are required" });
+    }
+    if (!payload.route?.from || !payload.route?.to) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "route.from and route.to are required",
+        });
+    }
+    if (!payload.schedule?.departure || !payload.schedule?.arrival) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "schedule.departure and schedule.arrival are required",
+        });
+    }
+
+    const updated = await Bus.findByIdAndUpdate(id, payload, {
+      new: true,
+      runValidators: true,
+    }).lean();
+
+    if (!updated)
+      return res.status(404).json({ success: false, message: "Bus not found" });
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error("updateBus error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}
+
+/* DELETE /api/buses/:id */
+export async function removeBus(req, res) {
+  try {
+    const { id } = req.params;
+    const deleted = await Bus.findByIdAndDelete(id).lean();
+    if (!deleted)
+      return res.status(404).json({ success: false, message: "Bus not found" });
+    return res.json({ success: true, data: { _id: id } });
+  } catch (err) {
+    console.error("removeBus error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 }

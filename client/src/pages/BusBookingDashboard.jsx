@@ -6,6 +6,7 @@ import Cookies from "js-cookie";
 import { getBuses, getBusById } from "../api/bus";
 import { createBooking, getBookingsByBusAndDate } from "../api/booking";
 import { createPassenger, getPassengerByEmail } from "../api/passenger";
+import { sendWhatsAppMessage } from "../api/whatsappApi";
 
 /* --------------------------------- helpers -------------------------------- */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -376,17 +377,50 @@ export default function BusBookingDashboard() {
         payment: form.payment || "Card",
       };
 
-      await createBooking(bookingPayload);
+      // 1) Create booking
+      const bookingRes = await createBooking(bookingPayload); // <-- capture result
       toast.success("Booking confirmed successfully!");
 
-      // mark booked seats by gender locally
+      // 2) Fire-and-forget WhatsApp (don't block success if it fails)
+      try {
+        // Try to find a bus name from response or local list as fallback
+        const busName =
+          bookingRes?.bus?.busName ||
+          bookingRes?.busName ||
+          buses?.find((b) => b._id === busId)?.busName ||
+          "N/A";
+
+        const p = bookingPayload.passenger;
+        const message =
+          `✅ Booking Confirmed!\n` +
+          `Bus: ${busName}\n` +
+          `Travel Date: ${bookingPayload.travelDate}\n` +
+          `Seats: ${
+            bookingPayload.seats?.length ? bookingPayload.seats.join(", ") : "-"
+          }\n` +
+          `Passenger: ${p.fname} ${p.lname} (${p.gender})\n` +
+          `Phone: ${p.phone}\n` +
+          `Pickup: ${bookingPayload.pickup}\n` +
+          `Drop: ${bookingPayload.drop}\n` +
+          `Payment: ${bookingPayload.payment}`;
+        console.log(p.phone);
+        await sendWhatsAppMessage({
+          to: (p.phone || "").trim(), // e.g. "+94771234567"
+          message,
+        });
+      } catch (waErr) {
+        console.warn("WhatsApp send failed:", waErr);
+        // optional toast: toast.error("Couldn't send WhatsApp message.");
+      }
+
+      // 3) Update local seat maps by gender
       if (form.gender === "Male") {
         setBookedGents((prev) => new Set([...prev, ...selected]));
       } else if (form.gender === "Female") {
         setBookedLadies((prev) => new Set([...prev, ...selected]));
       }
 
-      // create passenger record if new
+      // 4) Create passenger record if new
       if (!passenger) {
         const passengerPayload = {
           email,
@@ -395,15 +429,22 @@ export default function BusBookingDashboard() {
           phone: form.phone,
           gender: form.gender,
         };
-        await createPassenger(passengerPayload);
-        toast.success("Passenger created successfully!");
-        setPassenger(passengerPayload);
+        try {
+          await createPassenger(passengerPayload);
+          toast.success("Passenger created successfully!");
+          setPassenger(passengerPayload);
+        } catch (cpErr) {
+          console.warn("Create passenger failed:", cpErr);
+        }
       }
 
+      // 5) Reset selection
       setSelected(new Set());
     } catch (err) {
       toast.error(
-        err?.response?.data?.message || "Booking failed, please try again."
+        err?.response?.data?.message ||
+          err?.message ||
+          "Booking failed, please try again."
       );
     }
   };
