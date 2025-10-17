@@ -20,6 +20,7 @@ import Login from "./pages/passenger/Login";
 import Logout from "./pages/passenger/Logout";
 import BusBookingDashboard from "./pages/BusBookingDashboard";
 import UpdateProfile from "./pages/passenger/updateProfile";
+import BookingHistory from "./pages/passenger/BookingHistory";
 
 import AddBus from "./pages/busOwner/AddBus";
 import CompanyRegister from "./pages/busOwner/CompanyRegister";
@@ -113,6 +114,7 @@ function AppContent() {
             <Route path="/busBookingHistory" element={<BusBookingHistory />} />
             <Route path="/manageBuses" element={<ManageBuses />} />
             <Route path="/companyHistory" element={<CompanyHistory />} />
+            <Route path="/bookingHistory" element={<BookingHistory />} />
           </Routes>
 
           <div className="h-8" />

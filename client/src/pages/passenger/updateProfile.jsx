@@ -5,6 +5,7 @@ import {
   getPassengerByEmail,
   updatePassengerByEmail,
 } from "../../api/passenger";
+import { Navigate, useNavigate } from "react-router-dom";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const fmtNow = () => {
@@ -15,6 +16,7 @@ const fmtNow = () => {
 };
 
 export default function UpdateProfile() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -257,6 +259,14 @@ export default function UpdateProfile() {
                 <p className="text-rose-600 text-xs mt-1">{errors.gender}</p>
               )}
             </div>
+            <button
+              className={`ml-auto inline-flex items-center gap-2 rounded-xl px-6 py-3 font-semibold text-white shadow transition
+                bg-slate-400 cursor-not-allowed"
+                }`}
+              onClick={() => navigate("/bookingHistory")}
+            >
+              Booking History
+            </button>
 
             <div className="flex items-end">
               <button

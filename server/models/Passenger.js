@@ -20,7 +20,7 @@ const PassengerSchema = new mongoose.Schema(
       enum: ["Male", "Female"],
       required: true,
     },
-  },
+  }, 
   { timestamps: true }
 );
 
