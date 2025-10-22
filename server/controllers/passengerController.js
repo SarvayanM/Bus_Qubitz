@@ -13,13 +13,31 @@ const pickPassenger = (p) =>
   };
 
 // Create passenger
-export const createPassenger = async (req, res) => {
+export async function createPassenger(req, res) {
   try {
-    const passenger = new Passenger(req.body);
-    await passenger.save();
-    res.status(201).json({ success: true, data: passenger });
+    const { phone, fname, lname } = req.body || {};
+    if (!phone) return res.status(400).json({ message: "Phone required" });
+    const existing = await Passenger.findOne({ phone });
+    if (existing) return res.json(existing);
+    const created = await Passenger.create({
+      phone,
+      fname: fname || "",
+      lname: lname || "",
+    });
+    res.status(201).json(created);
+  } catch {
+    res.status(500).json({ message: "Failed" });
+  }
+}
+
+export const getByPhone = async (req, res, next) => {
+  try {
+    const { phone } = req.query; // E.164
+    if (!phone) return res.status(400).json({ message: "phone is required" });
+    const doc = await Passenger.findOne({ phone });
+    res.json(doc || null);
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    next(err);
   }
 };
 

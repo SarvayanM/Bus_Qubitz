@@ -6,6 +6,14 @@ export async function createPassenger(payload) {
   return data;
 }
 
+// E.164 like +94771234567
+export async function getPassengerByPhone(phone) {
+  const { data } = await http.get(`/api/passengers/by-phone`, {
+    params: { phone },
+  });
+  return data || null;
+}
+
 export async function getPassengerByEmail(email) {
   console.log("hi");
   console.log(email);

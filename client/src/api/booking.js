@@ -8,11 +8,11 @@ export async function createBooking(payload) {
   return data.data;
 }
 
-export async function getBookingsByBusAndDate(busId, travelDate) {
-  const { data } = await http.get(`/api/bookings/${busId}/${travelDate}`);
-  if (!data?.success)
-    throw new Error(data?.message || "Failed to load bookings");
-  return data.data;
+export async function getBookingsByBusAndDate(busId, date) {
+  const { data } = await http.get(`/api/bookings/by-bus-and-date`, {
+    params: { busId, date },
+  });
+  return data;
 }
 
 export async function getBookingListByBusAndDate(busId, travelDate) {

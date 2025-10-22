@@ -156,6 +156,20 @@ export const getBus = async (req, res) => {
   }
 };
 
+export const listBuses = async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+    const q = {};
+    if (from) q["route.from"] = new RegExp(`^${from}$`, "i");
+    if (to) q["route.to"] = new RegExp(`^${to}$`, "i");
+
+    const buses = await Bus.find(q).sort({ "route.from": 1, "route.to": 1 });
+    res.json(buses);
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getBusById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -272,20 +286,16 @@ export async function updateBus(req, res) {
         .json({ success: false, message: "busName and busNo are required" });
     }
     if (!payload.route?.from || !payload.route?.to) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "route.from and route.to are required",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "route.from and route.to are required",
+      });
     }
     if (!payload.schedule?.departure || !payload.schedule?.arrival) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "schedule.departure and schedule.arrival are required",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "schedule.departure and schedule.arrival are required",
+      });
     }
 
     const updated = await Bus.findByIdAndUpdate(id, payload, {

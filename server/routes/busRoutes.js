@@ -8,6 +8,7 @@ import {
   getAvailableDatesForBus,
   updateBus,
   removeBus,
+  listBuses,
 } from "../controllers/busController.js";
 
 const router = Router();
@@ -15,6 +16,7 @@ const router = Router();
 // Create a bus (matches your frontend POST /api/buses)
 router.post("/", createBus);
 router.get("/", getBus);
+router.get("/list", listBuses);
 router.get("/:id", getBusById);
 // Company-scoped list
 router.get("/by-company/:companyId", getBusesByCompany);

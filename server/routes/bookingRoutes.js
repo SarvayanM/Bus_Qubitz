@@ -3,7 +3,7 @@ import {
   createBooking,
   getBookings,
   getBusBookings,
-  getBookingListByBusAndDate,
+  getByBusAndDate,
   getPassengerBookingHistory,
 } from "../controllers/bookingController.js";
 
@@ -12,7 +12,7 @@ const router = express.Router();
 router.post("/", createBooking);
 router.get("/", getBookings);
 router.get("/:busId/:travelDate", getBusBookings);
-router.get("/list/:busId/:travelDate", getBookingListByBusAndDate);
+router.get("/by-bus-and-date", getByBusAndDate);
 router.get("/history", getPassengerBookingHistory);
 
 export default router;

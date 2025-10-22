@@ -1,16 +1,38 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { getBuses } from "../api/bus";
-import bus1 from "../assets/images/bus1.jpg";
-import bus2 from "../assets/images/bus2.jpg";
-import bus3 from "../assets/images/bus3.jpg";
-import bus4 from "../assets/images/bus4.jpg";
+import bus1 from "../assets/images/bg.jpg";
+import bus2 from "../assets/images/bus5.jpeg";
+import bus3 from "../assets/images/bus1.jpg";
+import bus4 from "../assets/images/bus11.jpeg";
+import bus5 from "../assets/images/bus2.jpg";
 
-export default function WelcomePage() {
+/** Utility: yyyy-mm-dd with local timezone (Asia/Colombo) */
+function todayISO() {
+  const now = new Date();
+  // zero time to local midnight
+  now.setHours(0, 0, 0, 0);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export default function Home({ userName = "" }) {
+  const navigate = useNavigate();
+
   const [currentSlide, setCurrentSlide] = useState(0);
   const [buses, setBuses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Booking form state
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [date, setDate] = useState(todayISO());
+
+  // Form errors
+  const [formError, setFormError] = useState("");
 
   const slides = useMemo(
     () => [
@@ -18,6 +40,7 @@ export default function WelcomePage() {
       { src: bus2, alt: "Comfortable seats inside the bus" },
       { src: bus3, alt: "Night service along expressway" },
       { src: bus4, alt: "Premium coach at terminal" },
+      { src: bus5, alt: "Luxury bus interior" },
     ],
     []
   );
@@ -46,12 +69,52 @@ export default function WelcomePage() {
     fetchBuses();
   }, []);
 
+  /** Unique set of all locations from DB (both route.from and route.to) */
+  const locations = useMemo(() => {
+    const set = new Set();
+    for (const b of buses) {
+      const f = b?.route?.from?.trim();
+      const t = b?.route?.to?.trim();
+      if (f) set.add(f);
+      if (t) set.add(t);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [buses]);
+
+  // Keep a clean error state on field changes
+  useEffect(() => {
+    setFormError("");
+  }, [from, to, date]);
+
   const nextSlide = () => setCurrentSlide((prev) => (prev + 1) % slides.length);
   const prevSlide = () =>
     setCurrentSlide((prev) => (prev - 1 + slides.length) % slides.length);
 
+  /** Validate & submit */
+  const handleSearch = (e) => {
+    e.preventDefault();
+
+    if (!from || !to || !date) {
+      return setFormError("Please select From, To and a valid Date.");
+    }
+    if (from === to) {
+      return setFormError("From and To cannot be the same location.");
+    }
+
+    // Validate date >= today
+    const selected = new Date(date);
+    const min = new Date(todayISO());
+    if (selected < min) {
+      return setFormError("Please choose a date that is today or later.");
+    }
+
+    // Navigate with query params
+    const params = new URLSearchParams({ from, to, date }).toString();
+    navigate(`/selectedBusDetails?${params}`);
+  };
+
   return (
-    <div className="min-h-screen bg-[#F9FAFB] text-gray-900 mt-16">
+    <div className="min-h-screen bg-[#F9FAFB] text-gray-900 mt-0">
       {/* Hero Section */}
       <section className="relative h-[92vh] overflow-hidden">
         <div className="absolute inset-0">
@@ -78,6 +141,89 @@ export default function WelcomePage() {
           <p className="text-lg mb-8 max-w-2xl">
             Fast, easy bookings — island-wide coverage with premium comfort.
           </p>
+
+          {/* Booking bar (From / To / Date) */}
+          <form
+            onSubmit={handleSearch}
+            className="w-full max-w-4xl bg-white/90 backdrop-blur border border-white/30 rounded-2xl shadow-xl p-4 sm:p-5 text-left"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+              {/* From */}
+              <div className="flex flex-col">
+                <label className="text-sm font-semibold text-gray-700 mb-1">
+                  From
+                </label>
+                <select
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  className="h-11 rounded-lg border border-gray-300 px-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                >
+                  <option value="">Select origin</option>
+                  {locations.map((loc) => (
+                    <option key={`from-${loc}`} value={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* To */}
+              <div className="flex flex-col">
+                <label className="text-sm font-semibold text-gray-700 mb-1">
+                  To
+                </label>
+                <select
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  className="h-11 rounded-lg border border-gray-300 px-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                >
+                  <option value="">Select destination</option>
+                  {locations.map((loc) => (
+                    <option
+                      key={`to-${loc}`}
+                      value={loc}
+                      // keep it selectable (requirement: both dropdowns include both cities),
+                      // but we can visually disable same-option if you prefer:
+                      disabled={loc === from}
+                    >
+                      {loc}
+                    </option>
+                  ))}
+                </select>
+                {/* If you don't want the disabled behavior at all, remove the `disabled={loc===from}` */}
+              </div>
+
+              {/* Date */}
+              <div className="flex flex-col">
+                <label className="text-sm font-semibold text-gray-700 mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  min={todayISO()}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="h-11 rounded-lg border border-gray-300 px-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB] [color-scheme:light]"
+                />
+              </div>
+
+              {/* Submit */}
+              <div className="flex md:justify-end">
+                <button
+                  type="submit"
+                  className="w-full md:w-auto bg-[#2563EB] hover:bg-[#1d4ed8] text-white font-semibold h-11 px-6 rounded-lg shadow-lg transition-all duration-200"
+                >
+                  Search Buses {userName && `, ${userName}`}!
+                </button>
+              </div>
+            </div>
+
+            {formError && (
+              <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                {formError}
+              </div>
+            )}
+          </form>
 
           {/* Slide Controls */}
           <div className="absolute bottom-6 flex items-center gap-4">
@@ -202,6 +348,15 @@ export default function WelcomePage() {
               icon="⚡"
             />
           </div>
+
+          <div className="text-center">
+            <Link
+              to="/busBookingDashboard"
+              className="inline-flex items-center bg-[#2563EB] hover:bg-[#1d4ed8] text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105"
+            >
+              Start Your Journey {userName && `, ${userName}`}!
+            </Link>
+          </div>
         </div>
       </section>
     </div>
@@ -307,10 +462,10 @@ function BusCard({ bus }) {
         )}
 
         <Link
-          to={"/signup"}
+          to={id ? `/busBookingDashboard?busId=${id}` : "/busBookingDashboard"}
           className="w-full bg-[#2563EB] hover:bg-[#1d4ed8] text-white font-semibold py-2.5 rounded-lg transition-all duration-200 text-center block"
         >
-          For Book, Signup Now
+          Book Now
         </Link>
       </div>
     </div>

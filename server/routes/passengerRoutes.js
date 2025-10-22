@@ -3,7 +3,8 @@ import { Router } from "express";
 import {
   createPassenger,
   getPassengerByEmail as getPassengerByEmailCtrl,
-  updatePassengerByEmailController, // alias to avoid confusion
+  updatePassengerByEmailController,
+  getByPhone, // alias to avoid confusion
   logout,
 } from "../controllers/passengerController.js";
 
@@ -32,6 +33,7 @@ router.get("/", async (req, res, next) => {
 router.post("/", createPassenger);
 // Update profile by email
 router.put("/by-email", updatePassengerByEmailController);
+router.get("/by-phone", getByPhone);
 router.post("/logout", logout);
 
 export default router;

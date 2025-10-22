@@ -11,6 +11,15 @@ export async function getBuses() {
   return data.data; // array of bus docs
 }
 
+// Optional: filter by ?from=&to= for dashboard pre-filter
+export async function getBusesList({ from, to } = {}) {
+  const params = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const { data } = await http.get("/api/buses/list", { params });
+  return data;
+}
+
 export async function getBusById(id) {
   const { data } = await http.get(`/api/buses/${id}`);
   if (!data?.success) throw new Error(data?.message || "Failed to load bus");

@@ -4,9 +4,72 @@ import Passenger from "../models/Passenger.js";
 // import mongoose from "mongoose";
 // minimal model shown below (if needed)
 
-export const createBooking = async (req, res) => {
+/**
+ * GET /api/bookings/by-bus-and-date?busId=&date=YYYY-MM-DD
+ * Returns bookedByGents, bookedByLadies, unavailableSeats
+ */
+export const getByBusAndDate = async (req, res, next) => {
+  try {
+    const { busId, date } = req.query;
+    if (!busId || !date) {
+      return res.status(400).json({ message: "busId and date are required" });
+    }
+
+    const [bus, bookings] = await Promise.all([
+      Bus.findById(busId, { unavailable: 1 }),
+      Booking.find({ busId, travelDate: date }, { seats: 1, gender: 1 }),
+    ]);
+
+    if (!bus) return res.status(404).json({ message: "Bus not found" });
+
+    const bookedByGents = [];
+    const bookedByLadies = [];
+    bookings.forEach((b) => {
+      (b.gender === "Male" ? bookedByGents : bookedByLadies).push(
+        ...(b.seats || [])
+      );
+    });
+
+    res.json({
+      bookedByGents,
+      bookedByLadies,
+      unavailableSeats: bus.unavailable || [],
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/bookings
+ * Body: { email?, busId, travelDate, seats:number[], passenger:{fname,lname,phone,gender}, pickup, drop, payment }
+ * Performs conflict check and creates booking.
+ */
+export async function createBooking(req, res) {
   try {
     const {
+      email,
+      bus: { id: busId } = {},
+      date: travelDate,
+      seats = [],
+      passenger,
+      pickup,
+      drop,
+      payment,
+    } = req.body || {};
+
+    if (!busId || !travelDate || !Array.isArray(seats) || seats.length === 0)
+      return res.status(400).json({ message: "Missing required fields" });
+
+    // Validate seats: must be [{ number, gender }]
+    for (const s of seats) {
+      if (typeof s.number !== "number")
+        return res.status(400).json({ message: "Invalid seat number" });
+      if (!["Male", "Female", "Other"].includes(s.gender))
+        return res.status(400).json({ message: "Invalid seat gender" });
+    }
+
+    const doc = await Booking.create({
       email,
       busId,
       travelDate,
@@ -15,53 +78,13 @@ export const createBooking = async (req, res) => {
       pickup,
       drop,
       payment,
-    } = req.body;
-
-    if (!email) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Email is missing" });
-    }
-
-    if (!busId || !travelDate || !seats?.length) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing required fields" });
-    }
-
-    // Ensure bus exists
-    const bus = await Bus.findById(busId);
-    if (!bus)
-      return res.status(404).json({ success: false, message: "Bus not found" });
-
-    // Prevent double booking (seat already taken)
-    const existing = await Booking.findOne({
-      bus: busId,
-      travelDate,
-      seats: { $in: seats },
-    });
-    if (existing) {
-      return res
-        .status(400)
-        .json({ success: false, message: "One or more seats already booked" });
-    }
-
-    const booking = await Booking.create({
-      email: email,
-      busId,
-      travelDate,
-      seats,
-      passenger,
-      pickup,
-      drop,
-      payment,
     });
 
-    res.json({ success: true, data: booking });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(201).json(doc);
+  } catch (e) {
+    res.status(500).json({ message: "Failed" });
   }
-};
+}
 
 export const getBookings = async (req, res) => {
   try {
@@ -96,25 +119,6 @@ export const getBusBookings = async (req, res) => {
     res.json({
       success: true,
       data: { bookedByGents, bookedByLadies, unavailableSeats },
-    });
-  } catch (err) {
-    console.error(err);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to load bookings" });
-  }
-};
-
-export const getBookingListByBusAndDate = async (req, res) => {
-  try {
-    const { busId, travelDate } = req.params;
-
-    const bookings = await Booking.find({ busId, travelDate }).lean();
-    console.log(bookings);
-
-    res.json({
-      success: true,
-      data: { bookings },
     });
   } catch (err) {
     console.error(err);

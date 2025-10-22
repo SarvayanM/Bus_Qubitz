@@ -1,131 +1,235 @@
-import React, { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
+import {
+  FaHome,
+  FaInfoCircle,
+  FaPhoneAlt,
+  FaSignInAlt,
+  FaBus,
+} from "react-icons/fa";
+import { HiMenuAlt3, HiX } from "react-icons/hi";
+import { motion, AnimatePresence } from "framer-motion";
 
-/**
- * Professional Navbar Component (Simplified)
- * Colors:
- *  Primary: #16A34A (Green)
- *  Secondary: #2563EB (Blue)
- *  Neutral: #F9FAFB (Light Gray)
- */
 export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const location = useLocation();
 
-  // Unified NavLink styling (no active/inactive styles)
-  const navLinkClass =
-    "px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 text-white/90 hover:bg-white/10 hover:text-white";
+  // Handle scroll effect (shadow only—navbar stays white)
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 10);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const navItems = [
+    { path: "/", label: "Home", icon: <FaHome className="text-lg" /> },
+    {
+      path: "/about",
+      label: "About Us",
+      icon: <FaInfoCircle className="text-lg" />,
+    },
+    {
+      path: "/contact",
+      label: "Contact Us",
+      icon: <FaPhoneAlt className="text-lg" />,
+    },
+    {
+      path: "/login",
+      label: "Login",
+      icon: <FaSignInAlt className="text-lg" />,
+    },
+  ];
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
-  return (
-    <header className="fixed top-0 inset-x-0 z-50 bg-[#2563EB] text-white shadow-lg backdrop-blur-sm bg-opacity-95">
-      <div className="mx-auto max-w-7xl">
-        {/* Main Navigation Bar */}
-        <nav className="h-16 px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-          {/* Brand Logo & Name */}
-          <Link
-            to="/"
-            className="flex items-center gap-3 group"
-            onClick={closeMobileMenu}
-          >
-            <div className="flex items-center justify-center h-10 w-10 rounded-full bg-white/10 group-hover:bg-white/20 transition-all duration-200">
-              <img
-                src="/bus-icon.jpg"
-                alt="leoforeio logo"
-                className="h-8 w-8 rounded-full"
-              />
-            </div>
-            <span className="text-lg font-bold tracking-tight text-white">
-              leoforeio
-            </span>
-          </Link>
+  const navVariants = {
+    hidden: { y: -100, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 100,
+        damping: 20,
+        duration: 0.5,
+      },
+    },
+  };
 
-          {/* Desktop Navigation Links */}
-          <div className="hidden md:flex items-center gap-1">
-            <NavLink to="/" className={navLinkClass}>
-              Home
-            </NavLink>
-            <NavLink to="/about" className={navLinkClass}>
-              About Us
-            </NavLink>
-            <NavLink to="/contact" className={navLinkClass}>
-              Contact Us
-            </NavLink>
-            <NavLink to="/login" className={navLinkClass}>
-              Login
-            </NavLink>
-          </div>
+  const mobileMenuVariants = {
+    closed: { opacity: 0, x: "100%", transition: { duration: 0.25 } },
+    open: {
+      opacity: 1,
+      x: 0,
+      transition: {
+        type: "spring",
+        stiffness: 300,
+        damping: 30,
+        duration: 0.35,
+      },
+    },
+  };
+
+  const itemVariants = {
+    closed: { x: 12, opacity: 0 },
+    open: (i) => ({
+      x: 0,
+      opacity: 1,
+      transition: { delay: i * 0.08, duration: 0.25 },
+    }),
+  };
+
+  return (
+    <motion.header
+      className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 bg-white ${
+        isScrolled ? "shadow-lg" : "shadow-sm"
+      }`}
+      initial="hidden"
+      animate="visible"
+      variants={navVariants}
+      role="banner"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between">
+          {/* Logo (shown once on mobile) */}
+          <motion.div
+            className="flex items-center gap-3"
+            whileHover={{ scale: 1.03 }}
+            transition={{ type: "spring", stiffness: 400 }}
+          >
+            <Link
+              to="/"
+              className="flex items-center gap-3"
+              onClick={closeMobileMenu}
+            >
+              <div className="p-2 rounded-xl bg-white text-white flex items-center justify-center">
+                <img
+                  src="src/assets/images/bus-logo-2.png"
+                  alt="Bus Logo"
+                  className="w-15 h-12 object-contain"
+                />
+              </div>
+
+              <span className="text-2xl font-bold text-blue-900">
+                Leoforeio
+              </span>
+            </Link>
+          </motion.div>
+
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center gap-1">
+            {navItems.map((item) => (
+              <motion.div
+                key={item.path}
+                whileHover={{ y: -2 }}
+                transition={{ type: "spring", stiffness: 400 }}
+              >
+                <NavLink
+                  to={item.path}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-200 ${
+                      isActive
+                        ? "bg-blue-900 text-white"
+                        : "text-black hover:bg-blue-100"
+                    }`
+                  }
+                >
+                  {item.icon}
+                  <span className="font-semibold">{item.label}</span>
+                </NavLink>
+              </motion.div>
+            ))}
+          </nav>
 
           {/* Mobile Menu Button */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg hover:bg-white/10"
+          <motion.button
+            className="md:hidden p-2 rounded-lg text-black hover:bg-gray-100 transition-colors duration-200"
+            onClick={() => setIsMobileMenuOpen((v) => !v)}
+            whileTap={{ scale: 0.95 }}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-menu"
+            aria-label="Toggle navigation menu"
           >
-            <svg
-              className="h-6 w-6 text-white"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              {isMobileMenuOpen ? (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              ) : (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              )}
-            </svg>
-          </button>
-        </nav>
-
-        {/* Mobile Menu Panel */}
-        {isMobileMenuOpen && (
-          <div
-            id="mobile-menu"
-            className="md:hidden border-t border-white/20 bg-[#2563EB] animate-in slide-in-from-top duration-200"
-          >
-            <div className="px-4 pt-2 pb-6 space-y-2">
-              <NavLink
-                to="/"
-                className={navLinkClass}
-                onClick={closeMobileMenu}
-              >
-                Home
-              </NavLink>
-              <NavLink
-                to="/about"
-                className={navLinkClass}
-                onClick={closeMobileMenu}
-              >
-                About Us
-              </NavLink>
-              <NavLink
-                to="/contact"
-                className={navLinkClass}
-                onClick={closeMobileMenu}
-              >
-                Contact Us
-              </NavLink>
-              <NavLink
-                to="/login"
-                className={navLinkClass}
-                onClick={closeMobileMenu}
-              >
-                Login
-              </NavLink>
-            </div>
-          </div>
-        )}
+            {isMobileMenuOpen ? (
+              <HiX className="text-2xl" />
+            ) : (
+              <HiMenuAlt3 className="text-2xl" />
+            )}
+          </motion.button>
+        </div>
       </div>
-    </header>
+
+      {/* Mobile Fullscreen Navigation (covers page content with white background) */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.nav
+            id="mobile-menu"
+            className="fixed inset-0 z-40 md:hidden bg-white"
+            variants={mobileMenuVariants}
+            initial="closed"
+            animate="open"
+            exit="closed"
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Top bar within the fullscreen sheet — only close button (no duplicate logo/name) */}
+            <div className="flex items-center justify-between h-16 px-4 border-b border-blue-200">
+              <span className="sr-only">Mobile navigation</span>
+              <button
+                onClick={closeMobileMenu}
+                className="ml-auto p-2 rounded-lg text-white hover:bg-blue-100 transition-colors"
+                aria-label="Close navigation menu"
+              >
+                <HiX className="text-2xl" />
+              </button>
+            </div>
+
+            {/* Menu Items */}
+            <div className="bg-white px-4 py-6">
+              <div className="space-y-2">
+                {navItems.map((item, index) => (
+                  <motion.div
+                    key={item.path}
+                    custom={index}
+                    variants={itemVariants}
+                    initial="closed"
+                    animate="open"
+                  >
+                    <NavLink
+                      to={item.path}
+                      onClick={closeMobileMenu}
+                      className={({ isActive }) =>
+                        [
+                          "flex items-center gap-3 w-full",
+                          "rounded-xl px-4 py-4",
+                          "text-base font-semibold",
+                          "border border-gray-200",
+                          "focus:outline-none focus:ring-2 focus:ring-blue-20",
+                          isActive
+                            ? "bg-blue-900 text-white border-blue-900"
+                            : "bg-white text-black hover:bg-blue-50",
+                        ].join(" ")
+                      }
+                    >
+                      <span
+                        className={`text-lg ${
+                          location.pathname === item.path
+                            ? "opacity-100"
+                            : "opacity-70"
+                        }`}
+                      >
+                        {item.icon}
+                      </span>
+                      <span>{item.label}</span>
+                    </NavLink>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
+    </motion.header>
   );
 }

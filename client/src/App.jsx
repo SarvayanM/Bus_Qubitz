@@ -4,13 +4,13 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import appBg from "./assets/images/bg.jpg";
+// import appBg from "./assets/images/bg.jpg";
 import RoleContext from "./components/common/RoleContext";
 
 import Navbar from "./components/common/Navbar";
-import PassengerNavbar from "./components/common/PassengerNavbar";
+import PassengerNavbar from "./components/passenger/PassengerNavbar";
 import BusOwnerNavbar from "./components/common/BusOwnerNavbar";
-
+import BusLoader from "./components/bus/BusLoader";
 import Footer from "./components/common/Footer";
 
 import Home from "./pages/Home";
@@ -18,9 +18,10 @@ import WelcomePage from "./pages/WelcomePage";
 import Signup from "./pages/passenger/Signup";
 import Login from "./pages/passenger/Login";
 import Logout from "./pages/passenger/Logout";
-import BusBookingDashboard from "./pages/BusBookingDashboard";
+import BusBookingDashboard from "./pages/passenger/BusBookingDashboard";
 import UpdateProfile from "./pages/passenger/updateProfile";
 import BookingHistory from "./pages/passenger/BookingHistory";
+import SelectedBusDetails from "./pages/passenger/SelectedBusDetails";
 
 import AddBus from "./pages/busOwner/AddBus";
 import CompanyRegister from "./pages/busOwner/CompanyRegister";
@@ -28,6 +29,7 @@ import BusBookingHistory from "./pages/busOwner/BusBookingHistory";
 import ManageBuses from "./pages/busOwner/ManageBuses";
 
 import CompanyHistory from "./pages/admin/CompanyHistory";
+import CompanyLogin from "./pages/busOwner/CompanyLogin";
 
 function AppContent() {
   const [userRole, setUserRole] = useState("");
@@ -65,64 +67,54 @@ function AppContent() {
   return (
     <RoleContext.Provider value={roleContextValue}>
       {/* Global Toasts */}
-      <ToastContainer
-        position="top-center"
-        theme="colored"
-        closeOnClick
-        pauseOnHover
-        newestOnTop
-        draggable
-        toastClassName="!bg-[#1D1E2C] !text-white"
-        progressClassName="!bg-gradient-to-r from-[#2DE2E6] to-[#FF6EC7]"
-      />
 
       {/* Page wrapper with optional background */}
-      <div
+      {/* <div
         className={`min-h-screen flex flex-col ${
           showGlobalBg ? "bg-page" : ""
         }`}
         style={showGlobalBg ? { "--page-bg": `url(${appBg})` } : undefined}
-      >
-        {/* NAVBAR */}
-        {!hideNavbar && (
-          <header className="sticky top-0 z-50 bg-[#1D1E2C]/95 backdrop-blur-sm">
-            {userRole === "passenger" ? (
-              <PassengerNavbar />
-            ) : userRole === "busOwner" ? (
-              <BusOwnerNavbar />
-            ) : (
-              <Navbar />
-            )}
-          </header>
-        )}
+      > */}
+      {/* NAVBAR */}
+      {!hideNavbar && (
+        <header className="sticky top-0 z-50 bg-[#1D1E2C]/95 backdrop-blur-sm">
+          {userRole === "passenger" ? (
+            <PassengerNavbar />
+          ) : userRole === "busOwner" ? (
+            <BusOwnerNavbar />
+          ) : (
+            <Navbar />
+          )}
+        </header>
+      )}
 
-        {/* MAIN */}
-        <main className={`flex-1 ${hideNavbar ? "" : "pt-6"}`}>
-          <Routes>
-            <Route path="/home" element={<Home />} />
-            <Route path="/" element={<WelcomePage />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/logout" element={<Logout />} />
-            <Route
-              path="/busBookingDashboard"
-              element={<BusBookingDashboard />}
-            />
-            <Route path="/updateProfile" element={<UpdateProfile />} />
-            <Route path="/addBus" element={<AddBus />} />
-            <Route path="/companyRegister" element={<CompanyRegister />} />
-            <Route path="/busBookingHistory" element={<BusBookingHistory />} />
-            <Route path="/manageBuses" element={<ManageBuses />} />
-            <Route path="/companyHistory" element={<CompanyHistory />} />
-            <Route path="/bookingHistory" element={<BookingHistory />} />
-          </Routes>
+      {/* MAIN */}
+      <main className={`flex-1 ${hideNavbar ? "" : "pt-6"}`}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/logout" element={<Logout />} />
+          <Route
+            path="/busBookingDashboard"
+            element={<BusBookingDashboard />}
+          />
+          <Route path="/updateProfile" element={<UpdateProfile />} />
+          <Route path="/addBus" element={<AddBus />} />
+          <Route path="/companyRegister" element={<CompanyRegister />} />
+          <Route path="/busBookingHistory" element={<BusBookingHistory />} />
+          <Route path="/manageBuses" element={<ManageBuses />} />
+          <Route path="/companyHistory" element={<CompanyHistory />} />
+          <Route path="/companyLogin" element={<CompanyLogin />} />
+          <Route path="/bookingHistory" element={<BookingHistory />} />
+          <Route path="/selectedBusDetails" element={<SelectedBusDetails />} />
+        </Routes>
 
-          <div className="h-8" />
-        </main>
+        <div className="h-8" />
+      </main>
 
-        {/* FOOTER */}
-        {!hideNavbar && <Footer />}
-      </div>
+      {/* FOOTER */}
+      {!hideNavbar && <Footer />}
     </RoleContext.Provider>
   );
 }

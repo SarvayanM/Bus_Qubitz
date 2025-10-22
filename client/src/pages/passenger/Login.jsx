@@ -1,24 +1,42 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  onAuthStateChanged,
+} from "firebase/auth";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
 import auth, { db } from "../../services/firebaseAuth";
 import { getDoc, doc } from "firebase/firestore";
 import RoleContext from "../../components/common/RoleContext";
-import { getCompanyIdByEmail } from "../../api/company";
+// import { getCompanyIdByPhone } from "../../api/company";
+import { toE164 } from "../../utils/phone";
 
+// Tailwind-based UI with gradient header (same visual style)
 function Login() {
   const navigate = useNavigate();
   const { setUserRole } = useContext(RoleContext);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showSignupOptions, setShowSignupOptions] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("+94"); // Default Sri Lanka; adjust if needed
+  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState("enterPhone"); // 'enterPhone' | 'enterOtp'
+  const [isSending, setIsSending] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const PASSWORD_RE = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
+  // Cooldown timer for resend
+  useEffect(() => {
+    if (!resendCooldown) return;
+    const id = setInterval(
+      () => setResendCooldown((s) => Math.max(0, s - 1)),
+      1000
+    );
+    return () => clearInterval(id);
+  }, [resendCooldown]);
 
   const notify = (message, type = "error") =>
     toast[type](message, {
@@ -29,83 +47,131 @@ function Login() {
       theme: "colored",
     });
 
-  const persistSession = (role, emailToStore) => {
+  // Setup Invisible reCAPTCHA once (Firebase Web requirement)
+  useEffect(() => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        "recaptcha-container",
+        {
+          size: "invisible",
+          callback: () => {
+            // Captcha solved automatically for invisible mode.
+          },
+        }
+      );
+    }
+    // Optionally watch auth state (auto-redirect if already logged in)
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // If you want to auto-redirect logged-in users
+        navigate("/home");
+      }
+    });
+    return () => unsub();
+  }, [navigate]);
+
+  const persistSession = (role, phoneToStore) => {
     localStorage.setItem("role", role);
-    localStorage.setItem("userEmail", emailToStore);
-    document.cookie = `email=${emailToStore}; path=/; max-age=86400`;
+    localStorage.setItem("userPhone", phoneToStore);
+    document.cookie = `phone=${encodeURIComponent(
+      phoneToStore
+    )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
     setUserRole(role);
   };
 
-  const handleSubmit = async (e) => {
+  const handleSendOtp = async (e) => {
     e.preventDefault();
-
-    if (!EMAIL_RE.test(email)) {
-      notify("Please enter a valid email address.");
-      return;
-    }
-    if (password === "") {
-      notify("Password cannot be empty.");
-      return;
-    }
-    if (!PASSWORD_RE.test(password)) {
-      notify(
-        "Password must include uppercase, lowercase, number & special character (min 8 characters)."
-      );
+    const formatted = toE164(countryCode, phone);
+    if (!formatted) {
+      notify("Enter a valid phone number (with correct country).");
       return;
     }
 
-    setIsSubmitting(true);
-
+    setIsSending(true);
     try {
-      if (email === "admin@gmail.com" && password === "Admin@123") {
-        persistSession("admin", email);
-        notify("Login successful!", "success");
-        navigate("/home");
-        return;
-      }
+      const appVerifier = window.recaptchaVerifier;
+      const result = await signInWithPhoneNumber(auth, formatted, appVerifier);
+      setConfirmationResult(result);
+      setStep("enterOtp");
+      setResendCooldown(30); // seconds
+      notify("OTP sent to your phone.", "success");
+    } catch (err) {
+      // Reset the verifier if needed
+      try {
+        window.recaptchaVerifier?.clear();
+        window.recaptchaVerifier = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          {
+            size: "invisible",
+          }
+        );
+      } catch {}
+      notify(err?.message || "Failed to send OTP. Please try again.");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
-      const { user } = await signInWithEmailAndPassword(auth, email, password);
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (!otp || otp.length < 6) {
+      notify("Please enter the 6-digit OTP sent to your phone.");
+      return;
+    }
+
+    if (!confirmationResult) {
+      notify("Please request a new OTP.");
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      const credential = await confirmationResult.confirm(otp);
+      const user = credential.user;
+
+      // Fetch role from Firestore (same as before, keyed by uid)
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const role = userDoc.data()?.role || "passenger";
 
-      if (role === "busOwner") {
-   
-        const companyId = await getCompanyIdByEmail(email);
-        console.log(companyId);
-        persistSession(role, companyId);
+      // Persist session (store phone, not email)
+      /* if (role === "busOwner") {
+        const companyId = await getCompanyIdByPhone(user.phoneNumber);
+        persistSession(role, user.phoneNumber);
         document.cookie = `companyId=${encodeURIComponent(
-          companyId
+          companyId || ""
         )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
-      } else if (role === "passenger") {
-        persistSession(role, email);
-        document.cookie = `email=${encodeURIComponent(
-          email
-        )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
-      }
+      } else {
+        persistSession(role, user.phoneNumber);
+      } */
 
       notify("Login successful!", "success");
       navigate("/home");
-    } catch (error) {
-      const errorMessages = {
-        "auth/user-not-found": "No user found with this email.",
-        "auth/wrong-password": "Incorrect password. Please try again.",
-        "auth/invalid-credential": "Invalid email/password combination.",
-      };
-      notify(errorMessages[error.code] || "Login failed. Please try again.");
+    } catch (err) {
+      notify(err?.message || "Invalid OTP. Please try again.");
+      console.log(err?.message);
     } finally {
-      setIsSubmitting(false);
+      setIsVerifying(false);
     }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    // Re-send by triggering send again
+    const fakeEvent = { preventDefault: () => {} };
+    await handleSendOtp(fakeEvent);
   };
 
   return (
     <>
+      {/* Required container for Firebase reCAPTCHA (invisible) */}
+      <div id="recaptcha-container" />
+
       <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] px-4 py-8">
-        {/* Background Pattern */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#2563EB]/5 to-[#16A34A]/5"></div>
 
-        {/* Login Card */}
         <div className="relative w-full max-w-md bg-white/80 backdrop-blur-md rounded-2xl shadow-2xl overflow-hidden z-10 border border-[#2563EB]/10">
-          {/* Header */}
           <div className="bg-gradient-to-r from-[#2563EB]/90 to-[#16A34A]/90 p-8 text-center text-white backdrop-blur-sm">
             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg
@@ -123,160 +189,146 @@ function Login() {
               </svg>
             </div>
             <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
-            <p className="text-white/90 text-lg">
-              Please login to continue your journey
-            </p>
+            <p className="text-white/90 text-lg">Sign in with your phone</p>
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="p-8 space-y-6">
-            {/* Email Field */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Email Address
-              </label>
-              <div className="relative">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
-                  placeholder="your@email.com"
-                  required
-                  autoComplete="email"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <svg
-                    className="h-5 w-5 text-[#2563EB]"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+          {/* Step: Enter Phone */}
+          {step === "enterPhone" && (
+            <form onSubmit={handleSendOtp} className="p-8 space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Phone Number
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    className="w-28 px-3 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                    />
-                  </svg>
+                    {/* Add more as needed */}
+                    <option value="+94">LK +94</option>
+                    <option value="+91">IN +91</option>
+                    <option value="+971">AE +971</option>
+                    <option value="+1">US +1</option>
+                    <option value="+44">UK +44</option>
+                  </select>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="flex-1 px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
+                    placeholder="7xxxxxxxx (no leading 0)"
+                    required
+                  />
                 </div>
+                <p className="text-xs text-gray-500 mt-2 bg-[#F9FAFB] p-2 rounded border border-gray-200">
+                  You’ll receive a 6-digit code via SMS.
+                </p>
               </div>
-            </div>
 
-            {/* Password Field */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
-                  placeholder="••••••••"
-                  required
-                  autoComplete="current-password"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <svg
-                    className="h-5 w-5 text-[#2563EB]"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                    />
-                  </svg>
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSending}
+                  className={`w-full py-4 px-4 rounded-lg font-semibold text-white transition duration-200 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] cursor-pointer ${
+                    isSending
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-gradient-to-r from-[#2563EB] to-[#16A34A] hover:from-[#1d4ed8] hover:to-[#15803d] hover:shadow-xl transform hover:scale-[1.02]"
+                  }`}
+                >
+                  {isSending ? "Sending..." : "Send OTP"}
+                </button>
+              </div>
+
+              <div className="relative py-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
                 </div>
-              </div>
-              <p className="text-xs text-gray-500 mt-2 bg-[#F9FAFB] p-2 rounded border border-gray-200">
-                Must include: uppercase, lowercase, number, special character
-                (min 8 chars)
-              </p>
-            </div>
-
-            {/* Submit Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className={`w-full py-4 px-4 rounded-lg font-semibold text-white transition duration-200 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] cursor-pointer ${
-                  isSubmitting
-                    ? "bg-gray-400 cursor-not-allowed"
-                    : "bg-gradient-to-r from-[#2563EB] to-[#16A34A] hover:from-[#1d4ed8] hover:to-[#15803d] hover:shadow-xl transform hover:scale-[1.02]"
-                }`}
-              >
-                {isSubmitting ? (
-                  <span className="flex items-center justify-center">
-                    <svg
-                      className="animate-spin h-5 w-5 mr-3 text-white"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.37 0 0 5.37 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Logging in...
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-3 bg-white text-gray-500">
+                    Need to create an account?
                   </span>
-                ) : (
-                  "Login"
-                )}
-              </button>
-            </div>
-
-            {/* Divider */}
-            <div className="relative py-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
+                </div>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-3 bg-white text-gray-500">
-                  Don't have an account?
-                </span>
-              </div>
-            </div>
 
-            {/* Action Links */}
-            <div className="flex flex-col sm:flex-row justify-between gap-3 text-center">
-              <button
-                type="button"
-                onClick={() => navigate("/signup")}
-                className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-              >
-                Create an account
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/companyRegister")}
-                className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-              >
-                Register Your Company Here
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/forgotPassword")}
-                className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-              >
-                Forgot password?
-              </button>
-            </div>
-          </form>
+              <div className="flex flex-col sm:flex-row justify-between gap-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => navigate("/signup")}
+                  className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
+                >
+                  Continue to Sign Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/help")}
+                  className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
+                >
+                  Need help?
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Step: Enter OTP */}
+          {step === "enterOtp" && (
+            <form onSubmit={handleVerifyOtp} className="p-8 space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Enter 6-digit OTP
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d*"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                  className="w-full px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200 tracking-widest text-center text-lg"
+                  placeholder="••••••"
+                  required
+                />
+                <div className="flex items-center justify-between mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setStep("enterPhone")}
+                    className="text-sm text-gray-600 hover:underline"
+                  >
+                    Change phone number
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resendCooldown > 0}
+                    className={`text-sm font-semibold ${
+                      resendCooldown > 0
+                        ? "text-gray-400 cursor-not-allowed"
+                        : "text-[#2563EB] hover:text-[#16A34A]"
+                    }`}
+                  >
+                    {resendCooldown > 0
+                      ? `Resend in ${resendCooldown}s`
+                      : "Resend OTP"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isVerifying}
+                  className={`w-full py-4 px-4 rounded-lg font-semibold text-white transition duration-200 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] cursor-pointer ${
+                    isVerifying
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-gradient-to-r from-[#2563EB] to-[#16A34A] hover:from-[#1d4ed8] hover:to-[#15803d] hover:shadow-xl transform hover:scale-[1.02]"
+                  }`}
+                >
+                  {isVerifying ? "Verifying..." : "Verify & Continue"}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
       <ToastContainer />

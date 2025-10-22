@@ -1,32 +1,27 @@
 import mongoose from "mongoose";
 
+const SeatSelectionSchema = new mongoose.Schema(
+  {
+    number: { type: Number, required: true },
+    gender: { type: String, enum: ["Male", "Female", "Other"], required: true },
+  },
+  { _id: false }
+);
+
 const BookingSchema = new mongoose.Schema(
   {
-    email: {
-      type: String,
-      required: true,
-    },
-    busId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
-    },
-    travelDate: {
-      type: String,
-      required: true,
-    },
-    seats: {
-      type: [Number],
-      required: true,
-    },
+    email: { type: String }, // optional if you use phone auth primarily
+    busId: { type: mongoose.Schema.Types.ObjectId, ref: "Bus", required: true },
+    travelDate: { type: String, required: true }, // YYYY-MM-DD
+    seats: { type: [SeatSelectionSchema], required: true },
     passenger: {
       fname: { type: String, required: true },
       lname: { type: String, required: true },
       phone: {
         type: String,
         required: true,
-        match: [/^\+94\d{9}$/, "Invalid Sri Lankan phone number"],
+        match: [/^\+\d{6,15}$/, "Invalid phone"],
       },
-      gender: { type: String, enum: ["Male", "Female"], required: true },
     },
     pickup: { type: String, required: true },
     drop: { type: String, required: true },
