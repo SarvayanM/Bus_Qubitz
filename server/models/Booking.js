@@ -10,7 +10,6 @@ const SeatSelectionSchema = new mongoose.Schema(
 
 const BookingSchema = new mongoose.Schema(
   {
-    email: { type: String }, // optional if you use phone auth primarily
     busId: { type: mongoose.Schema.Types.ObjectId, ref: "Bus", required: true },
     travelDate: { type: String, required: true }, // YYYY-MM-DD
     seats: { type: [SeatSelectionSchema], required: true },
@@ -20,7 +19,6 @@ const BookingSchema = new mongoose.Schema(
       phone: {
         type: String,
         required: true,
-        match: [/^\+\d{6,15}$/, "Invalid phone"],
       },
     },
     pickup: { type: String, required: true },

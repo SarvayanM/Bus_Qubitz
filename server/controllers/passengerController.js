@@ -15,7 +15,9 @@ const pickPassenger = (p) =>
 // Create passenger
 export async function createPassenger(req, res) {
   try {
+    console.log("hi")
     const { phone, fname, lname } = req.body || {};
+    console.log(phone)
     if (!phone) return res.status(400).json({ message: "Phone required" });
     const existing = await Passenger.findOne({ phone });
     if (existing) return res.json(existing);
@@ -33,6 +35,7 @@ export async function createPassenger(req, res) {
 export const getByPhone = async (req, res, next) => {
   try {
     const { phone } = req.query; // E.164
+    console.log("getByPhone hit with phone:", phone);
     if (!phone) return res.status(400).json({ message: "phone is required" });
     const doc = await Passenger.findOne({ phone });
     res.json(doc || null);

@@ -45,44 +45,95 @@ export const getByBusAndDate = async (req, res, next) => {
  * Body: { email?, busId, travelDate, seats:number[], passenger:{fname,lname,phone,gender}, pickup, drop, payment }
  * Performs conflict check and creates booking.
  */
+// controllers/bookingController.js
+
+const VALID_GENDERS = ["Male", "Female", "Other"];
+
 export async function createBooking(req, res) {
   try {
-    const {
-      email,
-      bus: { id: busId } = {},
-      date: travelDate,
-      seats = [],
-      passenger,
-      pickup,
-      drop,
-      payment,
-    } = req.body || {};
+    const b = req.body || {};
 
-    if (!busId || !travelDate || !Array.isArray(seats) || seats.length === 0)
-      return res.status(400).json({ message: "Missing required fields" });
+    // Accept multiple shapes
+    const busId = b?.bus?.id || b?.bus?.busId || b?.busId || b?.bus_id || null;
 
-    // Validate seats: must be [{ number, gender }]
-    for (const s of seats) {
-      if (typeof s.number !== "number")
-        return res.status(400).json({ message: "Invalid seat number" });
-      if (!["Male", "Female", "Other"].includes(s.gender))
-        return res.status(400).json({ message: "Invalid seat gender" });
+    const travelDate = b?.travelDate || b?.date || null;
+    const seats = Array.isArray(b?.seats) ? b.seats : [];
+    const passenger = b?.passenger || null;
+    const pickup = b?.pickup ?? passenger?.pickup ?? "";
+    const drop = b?.drop ?? passenger?.drop ?? "";
+    const payment = b?.payment ?? b?.paymentMethod ?? "Card";
+
+    // Optional metadata
+    const meta = {
+      from: b?.from ?? "",
+      to: b?.to ?? "",
+      busNo: b?.busNo ?? b?.bus?.busNo ?? "",
+      busName: b?.busName ?? b?.bus?.busName ?? "",
+      total: Number(b?.total ?? 0),
+    };
+
+    // Field-by-field validation with helpful messages
+    if (!busId) {
+      return res.status(400).json({ message: "busId is required" });
+    }
+    if (!travelDate) {
+      return res.status(400).json({ message: "travelDate/date is required" });
+    }
+    if (!Array.isArray(seats) || seats.length === 0) {
+      return res.status(400).json({ message: "seats array is required" });
+    }
+    if (!passenger || !passenger.phone) {
+      return res
+        .status(400)
+        .json({ message: "passenger with phone is required" });
     }
 
+    // Normalize / validate seats
+    const normalizedSeats = seats.map((s, idx) => {
+      const number =
+        typeof s.number === "string" ? parseInt(s.number, 10) : s.number;
+      if (!Number.isInteger(number)) {
+        throw new Error(`Invalid seat number at index ${idx}`);
+      }
+      if (!VALID_GENDERS.includes(s.gender)) {
+        throw new Error(
+          `Invalid seat gender at index ${idx}; expected one of ${VALID_GENDERS.join(
+            ", "
+          )}`
+        );
+      }
+      return { number, gender: s.gender };
+    });
+
+    // Create the booking
     const doc = await Booking.create({
-      email,
       busId,
       travelDate,
-      seats,
+      seats: normalizedSeats,
       passenger,
       pickup,
       drop,
       payment,
+      ...meta,
     });
 
-    res.status(201).json(doc);
+    return res.status(201).json({
+      success: true,
+      message: "Booking created",
+      data: { booking: doc }, // <— always put payload under `data`
+    });
   } catch (e) {
-    res.status(500).json({ message: "Failed" });
+    // Duplicate / validation clarity
+    if (e?.code === 11000) {
+      return res
+        .status(409)
+        .json({ message: "Duplicate booking / unique index violated" });
+    }
+    if (e?.message?.startsWith("Invalid seat")) {
+      return res.status(400).json({ message: e.message });
+    }
+    console.error("createBooking error:", e);
+    return res.status(500).json({ message: "Failed to create booking" });
   }
 }
 

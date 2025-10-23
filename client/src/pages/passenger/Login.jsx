@@ -9,18 +9,25 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import auth, { db } from "../../services/firebaseAuth";
-import { getDoc, doc } from "firebase/firestore";
+import {
+  getDoc,
+  setDoc,
+  updateDoc,
+  doc,
+  serverTimestamp,
+} from "firebase/firestore";
 import RoleContext from "../../components/common/RoleContext";
-// import { getCompanyIdByPhone } from "../../api/company";
 import { toE164 } from "../../utils/phone";
 
-// Tailwind-based UI with gradient header (same visual style)
+const DEFAULT_ROLE = "passenger";
+const USERS_COLLECTION = "users";
+
 function Login() {
   const navigate = useNavigate();
   const { setUserRole } = useContext(RoleContext);
 
   const [phone, setPhone] = useState("");
-  const [countryCode, setCountryCode] = useState("+94"); // Default Sri Lanka; adjust if needed
+  const [countryCode, setCountryCode] = useState("+94");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState("enterPhone"); // 'enterPhone' | 'enterOtp'
   const [isSending, setIsSending] = useState(false);
@@ -28,7 +35,7 @@ function Login() {
   const [confirmationResult, setConfirmationResult] = useState(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
-  // Cooldown timer for resend
+  // cooldown countdown
   useEffect(() => {
     if (!resendCooldown) return;
     const id = setInterval(
@@ -47,7 +54,7 @@ function Login() {
       theme: "colored",
     });
 
-  // Setup Invisible reCAPTCHA once (Firebase Web requirement)
+  // Initialize invisible reCAPTCHA exactly once, and watch auth state
   useEffect(() => {
     if (!window.recaptchaVerifier) {
       window.recaptchaVerifier = new RecaptchaVerifier(
@@ -55,29 +62,73 @@ function Login() {
         "recaptcha-container",
         {
           size: "invisible",
-          callback: () => {
-            // Captcha solved automatically for invisible mode.
-          },
         }
       );
     }
-    // Optionally watch auth state (auto-redirect if already logged in)
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // If you want to auto-redirect logged-in users
-        navigate("/home");
-      }
+    const unsub = onAuthStateChanged(auth, (user) => {
+      // If already signed in (e.g., page reload after successful login), go home
+      if (user) navigate("/home");
     });
     return () => unsub();
   }, [navigate]);
 
-  const persistSession = (role, phoneToStore) => {
+  const persistSession = (role, phoneE164) => {
     localStorage.setItem("role", role);
-    localStorage.setItem("userPhone", phoneToStore);
+    localStorage.setItem("userPhone", phoneE164);
     document.cookie = `phone=${encodeURIComponent(
-      phoneToStore
+      phoneE164
     )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
     setUserRole(role);
+  };
+
+  // Ensure Firestore user doc has phoneNumber & role; create or patch as needed.
+  const ensureUserDocument = async (uid, phoneE164) => {
+    const userRef = doc(db, USERS_COLLECTION, uid);
+    const snap = await getDoc(userRef);
+
+    if (!snap.exists()) {
+      const role = DEFAULT_ROLE;
+      await setDoc(userRef, {
+        uid,
+        phoneNumber: phoneE164,
+        role,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return { role, phoneNumber: phoneE164 };
+    }
+
+    // If exists, read role & phoneNumber; backfill any missing values.
+    const data = snap.data() || {};
+    let { role, phoneNumber } = data;
+
+    const updates = {};
+    if (!role) updates.role = DEFAULT_ROLE;
+    if (!phoneNumber) updates.phoneNumber = phoneE164;
+    if (Object.keys(updates).length) {
+      updates.updatedAt = serverTimestamp();
+      await updateDoc(userRef, updates);
+      role = updates.role || role;
+      phoneNumber = updates.phoneNumber || phoneNumber;
+    }
+
+    return {
+      role: role || DEFAULT_ROLE,
+      phoneNumber: phoneNumber || phoneE164,
+    };
+  };
+
+  const resetRecaptcha = () => {
+    try {
+      window.recaptchaVerifier?.clear?.();
+    } catch {}
+    window.recaptchaVerifier = new RecaptchaVerifier(
+      auth,
+      "recaptcha-container",
+      {
+        size: "invisible",
+      }
+    );
   };
 
   const handleSendOtp = async (e) => {
@@ -94,21 +145,21 @@ function Login() {
       const result = await signInWithPhoneNumber(auth, formatted, appVerifier);
       setConfirmationResult(result);
       setStep("enterOtp");
-      setResendCooldown(30); // seconds
+      setResendCooldown(30);
       notify("OTP sent to your phone.", "success");
     } catch (err) {
-      // Reset the verifier if needed
-      try {
-        window.recaptchaVerifier?.clear();
-        window.recaptchaVerifier = new RecaptchaVerifier(
-          auth,
-          "recaptcha-container",
-          {
-            size: "invisible",
-          }
-        );
-      } catch {}
-      notify(err?.message || "Failed to send OTP. Please try again.");
+      // Common Firebase Auth phone errors handled with nicer messages
+      const code = err?.code || "";
+      if (code === "auth/invalid-phone-number") {
+        notify("Invalid phone number. Please check and try again.");
+      } else if (code === "auth/too-many-requests") {
+        notify("Too many attempts. Please wait a bit and try again.");
+      } else if (code === "auth/quota-exceeded") {
+        notify("SMS quota exceeded. Please try again later.");
+      } else {
+        notify(err?.message || "Failed to send OTP. Please try again.");
+      }
+      resetRecaptcha();
     } finally {
       setIsSending(false);
     }
@@ -120,7 +171,6 @@ function Login() {
       notify("Please enter the 6-digit OTP sent to your phone.");
       return;
     }
-
     if (!confirmationResult) {
       notify("Please request a new OTP.");
       return;
@@ -130,27 +180,30 @@ function Login() {
     try {
       const credential = await confirmationResult.confirm(otp);
       const user = credential.user;
+      const phoneE164 = user.phoneNumber; // Verified E.164 from Firebase
 
-      // Fetch role from Firestore (same as before, keyed by uid)
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const role = userDoc.data()?.role || "passenger";
+      // Create or read Firestore user doc, ensuring both phoneNumber & role are set.
+      const { role, phoneNumber } = await ensureUserDocument(
+        user.uid,
+        phoneE164
+      );
 
-      // Persist session (store phone, not email)
-      /* if (role === "busOwner") {
-        const companyId = await getCompanyIdByPhone(user.phoneNumber);
-        persistSession(role, user.phoneNumber);
-        document.cookie = `companyId=${encodeURIComponent(
-          companyId || ""
-        )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
-      } else {
-        persistSession(role, user.phoneNumber);
-      } */
+      // Persist session (cookies + localStorage + RoleContext)
+      persistSession(role, phoneNumber);
 
       notify("Login successful!", "success");
       navigate("/home");
     } catch (err) {
-      notify(err?.message || "Invalid OTP. Please try again.");
-      console.log(err?.message);
+      const code = err?.code || "";
+      if (code === "auth/invalid-verification-code") {
+        notify("Invalid OTP. Please check and try again.");
+      } else if (code === "auth/code-expired") {
+        notify("OTP expired. Please resend and try again.");
+      } else {
+        notify(err?.message || "Verification failed. Please try again.");
+      }
+      // after a failed confirmation, rebuild recaptcha to be safe
+      resetRecaptcha();
     } finally {
       setIsVerifying(false);
     }
@@ -158,7 +211,6 @@ function Login() {
 
   const handleResend = async () => {
     if (resendCooldown > 0) return;
-    // Re-send by triggering send again
     const fakeEvent = { preventDefault: () => {} };
     await handleSendOtp(fakeEvent);
   };
@@ -169,7 +221,7 @@ function Login() {
       <div id="recaptcha-container" />
 
       <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] px-4 py-8">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#2563EB]/5 to-[#16A34A]/5"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-[#2563EB]/5 to-[#16A34A]/5" />
 
         <div className="relative w-full max-w-md bg-white/80 backdrop-blur-md rounded-2xl shadow-2xl overflow-hidden z-10 border border-[#2563EB]/10">
           <div className="bg-gradient-to-r from-[#2563EB]/90 to-[#16A34A]/90 p-8 text-center text-white backdrop-blur-sm">
@@ -205,7 +257,6 @@ function Login() {
                     value={countryCode}
                     onChange={(e) => setCountryCode(e.target.value)}
                   >
-                    {/* Add more as needed */}
                     <option value="+94">LK +94</option>
                     <option value="+91">IN +91</option>
                     <option value="+971">AE +971</option>

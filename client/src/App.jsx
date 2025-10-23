@@ -22,6 +22,7 @@ import BusBookingDashboard from "./pages/passenger/BusBookingDashboard";
 import UpdateProfile from "./pages/passenger/updateProfile";
 import BookingHistory from "./pages/passenger/BookingHistory";
 import SelectedBusDetails from "./pages/passenger/SelectedBusDetails";
+import CheckoutSummary from "./pages/passenger/CheckoutSummary";
 
 import AddBus from "./pages/busOwner/AddBus";
 import CompanyRegister from "./pages/busOwner/CompanyRegister";
@@ -108,6 +109,7 @@ function AppContent() {
           <Route path="/companyLogin" element={<CompanyLogin />} />
           <Route path="/bookingHistory" element={<BookingHistory />} />
           <Route path="/selectedBusDetails" element={<SelectedBusDetails />} />
+          <Route path="/checkoutSummary" element={<CheckoutSummary />} />
         </Routes>
 
         <div className="h-8" />

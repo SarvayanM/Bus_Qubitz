@@ -107,7 +107,7 @@ export default function BusBookingDashboard() {
   }, [bus]);
 
   // Status lookup
- const seatStatus = (num) => {
+  const seatStatus = (num) => {
     if (unavailableSeats.has(num)) return "unavailable";
     if (bookedMale.has(num)) return "bookedMale";
     if (bookedFemale.has(num)) return "bookedFemale";
@@ -189,8 +189,8 @@ export default function BusBookingDashboard() {
       payment: passenger.payment,
       total: Number(subtotal),
     };
-    sessionStorage.setItem("checkout-summary", JSON.stringify(payload));
-    navigate("/checkout-summary", { state: payload });
+    sessionStorage.setItem("checkoutSummary", JSON.stringify(payload));
+    navigate("/checkoutSummary", { state: payload });
   };
 
   // Theming container
