@@ -15,9 +15,9 @@ const pickPassenger = (p) =>
 // Create passenger
 export async function createPassenger(req, res) {
   try {
-    console.log("hi")
+    console.log("hi");
     const { phone, fname, lname } = req.body || {};
-    console.log(phone)
+    console.log(phone);
     if (!phone) return res.status(400).json({ message: "Phone required" });
     const existing = await Passenger.findOne({ phone });
     if (existing) return res.json(existing);
@@ -32,15 +32,112 @@ export async function createPassenger(req, res) {
   }
 }
 
-export const getByPhone = async (req, res, next) => {
+/** Normalizer (keep it simple; enforce +94XXXXXXXXX format if you want stricter policy) */
+const normalizePhone = (p = "") => String(p).trim();
+
+export const getPassengerByPhoneController = async (req, res) => {
   try {
-    const { phone } = req.query; // E.164
-    console.log("getByPhone hit with phone:", phone);
-    if (!phone) return res.status(400).json({ message: "phone is required" });
-    const doc = await Passenger.findOne({ phone });
-    res.json(doc || null);
+    const phoneParam = normalizePhone(req.params.phone);
+    if (!phoneParam) {
+      return res.status(400).json({ ok: false, message: "Phone is required." });
+    }
+
+    const passenger = await Passenger.findOne({ phone: phoneParam }).lean();
+    if (!passenger) {
+      return res
+        .status(404)
+        .json({ ok: false, message: "Passenger not found." });
+    }
+
+    return res.status(200).json({ ok: true, passenger });
   } catch (err) {
-    next(err);
+    console.error("getPassengerByPhone error:", err);
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        message: "Failed to fetch passenger.",
+        error: err?.message,
+      });
+  }
+};
+
+export const updatePassengerByPhoneController = async (req, res) => {
+  try {
+    const phoneParam = normalizePhone(req.params.phone);
+    if (!phoneParam) {
+      return res.status(400).json({ ok: false, message: "Phone is required." });
+    }
+
+    const { fname, lname, phone, gender, email } = req.body || {};
+
+    // Validate gender against model enum
+    if (
+      !(
+        gender === undefined ||
+        gender === "" ||
+        gender === "Male" ||
+        gender === "Female"
+      )
+    ) {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          message: "Invalid gender. Use '', 'Male', or 'Female'.",
+        });
+    }
+
+    // Optional: validate phone format if provided
+    if (phone !== undefined) {
+      const p = String(phone);
+      if (!/^\+94\d{9}$/.test(p)) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "Phone must match +94XXXXXXXXX." });
+      }
+    }
+
+    // Build update doc
+    const update = {};
+    if (fname !== undefined) update.fname = String(fname).trim();
+    if (lname !== undefined) update.lname = String(lname).trim();
+    if (gender !== undefined) update.gender = gender; // "", "Male", "Female"
+    if (email !== undefined) update.email = email || ""; // optional
+    if (phone !== undefined) update.phone = normalizePhone(phone);
+
+    // If changing phone, ensure uniqueness
+    if (update.phone && update.phone !== phoneParam) {
+      const exists = await Passenger.findOne({ phone: update.phone }).lean();
+      if (exists) {
+        return res
+          .status(409)
+          .json({ ok: false, message: "Phone already in use." });
+      }
+    }
+
+    const passenger = await Passenger.findOneAndUpdate(
+      { phone: phoneParam },
+      { $set: update },
+      { new: true }
+    ).lean();
+
+    if (!passenger) {
+      return res
+        .status(404)
+        .json({ ok: false, message: "Passenger not found." });
+    }
+
+    return res.status(200).json({ ok: true, passenger });
+  } catch (err) {
+    console.error("updatePassengerByPhone error:", err);
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        message: "Failed to update passenger.",
+        error: err?.message,
+      });
   }
 };
 

@@ -4,7 +4,9 @@ import {
   createPassenger,
   getPassengerByEmail as getPassengerByEmailCtrl,
   updatePassengerByEmailController,
-  getByPhone, // alias to avoid confusion
+  getPassengerByPhoneController,
+  updatePassengerByPhoneController,
+   // alias to avoid confusion
   logout,
 } from "../controllers/passengerController.js";
 
@@ -33,7 +35,10 @@ router.get("/", async (req, res, next) => {
 router.post("/", createPassenger);
 // Update profile by email
 router.put("/by-email", updatePassengerByEmailController);
-router.get("/by-phone", getByPhone);
+router.get("/by-phone/:phone", getPassengerByPhoneController);
+
+// PATCH profile by phone (allow phone change; uniqueness enforced)
+router.patch("/by-phone/:phone", updatePassengerByPhoneController);
 router.post("/logout", logout);
 
 export default router;

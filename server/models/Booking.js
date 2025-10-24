@@ -33,4 +33,7 @@ const BookingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// in Booking schema file, after schema definition:
+BookingSchema.index({ "passenger.phone": 1, createdAt: -1 });
+
 export default mongoose.model("Booking", BookingSchema);

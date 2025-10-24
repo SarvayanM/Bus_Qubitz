@@ -816,7 +816,9 @@ function BusCard({ bus, onBook, qDate }) {
               <div className="flex items-center gap-2 text-gray-700">
                 <Users className="w-5 h-5 text-blue-700" />
                 <span className="text-sm">Available Seats</span>
-                <span className="font-semibold">{availableSeats}</span>
+                <span className="font-semibold">
+                  {availableSeats} / {seats}
+                </span>
               </div>
             )}
             <div className="text-right">

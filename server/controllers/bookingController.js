@@ -1,6 +1,8 @@
 import Booking from "../models/Booking.js";
 import Bus from "../models/Bus.js";
 import Passenger from "../models/Passenger.js";
+import CancelBooking from "../models/CancelBooking.js";
+import { toDepartureDate, refundPercent } from "../utils/cancelHelpers.js";
 // import mongoose from "mongoose";
 // minimal model shown below (if needed)
 
@@ -193,25 +195,35 @@ export const getBusBookings = async (req, res) => {
  */
 
 // controllers/bookingController.js
+// controllers/bookingController.js
+
+/** Optional: keep numbers consistent like "+94XXXXXXXXX" or "07XXXXXXXX"
+ * Adjust to your app's convention if needed.
+ */
+function normalizePhone(input = "") {
+  return String(input).trim();
+}
+
 export const getPassengerBookingHistory = async (req, res) => {
   try {
-    const rawEmail =
-      req.user?.email || req.cookies?.email || req.query?.email || "";
-    const email = String(rawEmail).trim().toLowerCase();
-    if (!email) {
+    const rawPhone =
+      req.user?.phone || req.cookies?.phone || req.query?.phone || "";
+    const phone = normalizePhone(rawPhone);
+
+    if (!phone) {
       return res.status(400).json({
         ok: false,
         message:
-          "User email is required. Provide it via auth middleware or 'email' cookie.",
+          "Passenger phone is required. Provide it via auth middleware, a 'phone' cookie, or the 'phone' query parameter.",
       });
     }
 
     const bookings = await Booking.aggregate([
-      // Match by email (case-insensitive)
-      { $match: { $expr: { $eq: [{ $toLower: "$email" }, email] } } },
+      // Match by passenger.phone (exact string match after normalization)
+      { $match: { "passenger.phone": phone } },
       { $sort: { createdAt: -1 } },
 
-      // Normalize busId
+      // Normalize busId to ObjectId when stored as string
       {
         $addFields: {
           busIdObj: {
@@ -252,7 +264,7 @@ export const getPassengerBookingHistory = async (req, res) => {
       // Join Bus
       {
         $lookup: {
-          from: "buses", // ensure your Bus model maps to this collection
+          from: "buses", // collection name for Bus model
           localField: "busIdObj",
           foreignField: "_id",
           as: "bus",
@@ -260,10 +272,10 @@ export const getPassengerBookingHistory = async (req, res) => {
       },
       { $unwind: { path: "$bus", preserveNullAndEmptyArrays: true } },
 
-      // Join Company (to show operator; optional but recommended)
+      // Join Company (operator)
       {
         $lookup: {
-          from: "companies", // <-- adjust if your collection is named differently
+          from: "companies", // collection name for Company model
           localField: "bus.companyId",
           foreignField: "_id",
           as: "company",
@@ -271,7 +283,7 @@ export const getPassengerBookingHistory = async (req, res) => {
       },
       { $unwind: { path: "$company", preserveNullAndEmptyArrays: true } },
 
-      // Add aliases the UI expects on bus object
+      // Add UI-friendly aliases to `bus`
       {
         $addFields: {
           "bus.operatorName": { $ifNull: ["$company.name", "$bus.busName"] },
@@ -282,28 +294,27 @@ export const getPassengerBookingHistory = async (req, res) => {
         },
       },
 
-      // Final shape (KEEP top-level payment/status/pickup/drop)
+      // Final shape — keep top-level fields the UI reads
       {
         $project: {
-          email: 1,
           busId: 1,
           travelDate: 1,
           seats: 1,
-          passenger: 1, // { fname, lname, phone, gender }
+          passenger: 1, // { fname, lname, phone }
           pickup: 1,
           drop: 1,
-          payment: 1, // top-level
-          status: 1, // top-level
+          payment: 1, // "Cash" | "Card"
+          status: 1, // "Pending" | "Confirmed"
           createdAt: 1,
           updatedAt: 1,
-          bus: 1, // enriched bus with { from, to, operatorName, plateNo, departureTime, ... }
+          bus: 1, // enriched
         },
       },
     ]);
 
     return res.status(200).json({
       ok: true,
-      email,
+      phone,
       count: bookings.length,
       bookings,
     });
@@ -316,3 +327,185 @@ export const getPassengerBookingHistory = async (req, res) => {
     });
   }
 };
+
+export async function getHistory(req, res) {
+  try {
+    const { phone } = req.query;
+    if (!phone) return res.status(400).json({ message: "phone is required" });
+
+    const bookings = await Booking.aggregate([
+      // Match by passenger.phone (exact string match after normalization)
+      { $match: { "passenger.phone": phone } },
+      { $sort: { createdAt: -1 } },
+
+      // Normalize busId to ObjectId when stored as string
+      {
+        $addFields: {
+          busIdObj: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: [{ $type: "$busId" }, "objectId"] },
+                  then: "$busId",
+                },
+                {
+                  case: {
+                    $and: [
+                      { $eq: [{ $type: "$busId" }, "string"] },
+                      {
+                        $regexMatch: {
+                          input: "$busId",
+                          regex: /^[a-fA-F0-9]{24}$/,
+                        },
+                      },
+                    ],
+                  },
+                  then: {
+                    $convert: {
+                      input: "$busId",
+                      to: "objectId",
+                      onError: null,
+                      onNull: null,
+                    },
+                  },
+                },
+              ],
+              default: null,
+            },
+          },
+        },
+      },
+
+      // Join Bus
+      {
+        $lookup: {
+          from: "buses", // collection name for Bus model
+          localField: "busIdObj",
+          foreignField: "_id",
+          as: "bus",
+        },
+      },
+      { $unwind: { path: "$bus", preserveNullAndEmptyArrays: true } },
+
+      // Join Company (operator)
+      {
+        $lookup: {
+          from: "companies", // collection name for Company model
+          localField: "bus.companyId",
+          foreignField: "_id",
+          as: "company",
+        },
+      },
+      { $unwind: { path: "$company", preserveNullAndEmptyArrays: true } },
+
+      // Add UI-friendly aliases to `bus`
+      {
+        $addFields: {
+          "bus.operatorName": { $ifNull: ["$company.name", "$bus.busName"] },
+          "bus.plateNo": "$bus.busNo",
+          "bus.from": "$bus.route.from",
+          "bus.to": "$bus.route.to",
+          "bus.departureTime": "$bus.schedule.departure",
+        },
+      },
+
+      // Final shape — keep top-level fields the UI reads
+      {
+        $project: {
+          busId: 1,
+          travelDate: 1,
+          seats: 1,
+          passenger: 1, // { fname, lname, phone }
+          pickup: 1,
+          drop: 1,
+          payment: 1, // "Cash" | "Card"
+          status: 1, // "Pending" | "Confirmed"
+          createdAt: 1,
+          updatedAt: 1,
+          bus: 1, // enriched
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      ok: true,
+      phone,
+      count: bookings.length,
+      bookings,
+    });
+  } catch (err) {
+    console.error("getPassengerBookingHistory error:", err);
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to fetch booking history.",
+      error: err?.message,
+    });
+  }
+}
+
+export async function cancelBooking(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason) return res.status(400).json({ message: "reason is required" });
+
+    const booking = await Booking.findById(id);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+    if (booking.status === "Cancelled")
+      return res.status(400).json({ message: "Already cancelled" });
+
+    const passengerPhone = booking?.passenger?.phone;
+    if (!passengerPhone)
+      return res.status(400).json({ message: "No passenger phone on booking" });
+
+    // Authorization check (optional but recommended): if you have auth middleware, compare req.user.phone === passengerPhone
+
+    const travelDate = booking.travelDate; // "YYYY-MM-DD"
+    const departTime = booking?.bus?.departureTime || "00:00";
+    const departAt = toDepartureDate(travelDate, departTime);
+    const hoursBefore = (departAt.getTime() - Date.now()) / 3600000;
+
+    const pct = refundPercent(hoursBefore);
+    if (pct < 0) {
+      return res
+        .status(400)
+        .json({ message: "Cancellation window has passed (< 4 hours)" });
+    }
+
+    const totalAmount = Number(booking.total || booking.amount || 0);
+    const refundedAmount = Math.max(0, Math.round((totalAmount * pct) / 100));
+
+    // 1) mark booking as cancelled
+    booking.status = "Cancelled";
+    booking.cancelledAt = new Date();
+    await booking.save();
+
+    // 2) refund to wallet
+    const passenger = await Passenger.findOne({ phone: passengerPhone });
+    if (!passenger)
+      return res.status(404).json({ message: "Passenger not found" });
+    passenger.walletBalance =
+      Number(passenger.walletBalance || 0) + refundedAmount;
+    await passenger.save();
+
+    // 3) record cancel entry
+    await CancelBooking.create({
+      bookingId: booking._id,
+      passengerPhone,
+      reason,
+      refundPercent: pct,
+      refundedAmount,
+      meta: { travelDate, departTime },
+    });
+
+    return res.json({
+      refundedAmount,
+      refundPercent: pct,
+      walletBalance: passenger.walletBalance,
+      booking,
+    });
+  } catch (e) {
+    return res.status(500).json({ message: e.message });
+  }
+}

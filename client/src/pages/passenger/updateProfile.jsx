@@ -1,11 +1,12 @@
+// frontend/src/pages/UpdateProfile.jsx
 import { useEffect, useState } from "react";
 import Cookies from "js-cookie";
 import toast, { Toaster } from "react-hot-toast";
 import {
-  getPassengerByEmail,
-  updatePassengerByEmail,
+  getPassengerByPhone,
+  updatePassengerByPhone,
 } from "../../api/passenger";
-import { Navigate, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const fmtNow = () => {
@@ -20,14 +21,15 @@ export default function UpdateProfile() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  // email is our identity key; pulled from cookie
-  const [email, setEmail] = useState("");
+  // phone is our identity key; pulled from cookie "phoneNumber"
+  const [phoneKey, setPhoneKey] = useState("");
 
   const [form, setForm] = useState({
     fname: "",
     lname: "",
-    phone: "",
-    gender: "",
+    phone: "", // editable; you may choose to lock this if you prefer
+    gender: "", // "", "Male", "Female"
+    email: "", // optional in model
   });
 
   const [errors, setErrors] = useState({
@@ -35,42 +37,10 @@ export default function UpdateProfile() {
     lname: "",
     phone: "",
     gender: "",
+    email: "",
   });
 
-  useEffect(() => {
-    const e = Cookies.get("email") || ""; // <- you already set this elsewhere
-    setEmail(e);
-  }, []);
-
-  useEffect(() => {
-    if (!email) {
-      setLoading(false);
-      return;
-    }
-    let mounted = true;
-    (async () => {
-      try {
-        const p = await getPassengerByEmail(email);
-        if (!mounted) return;
-        if (p) {
-          setForm({
-            fname: p.fname || "",
-            lname: p.lname || "",
-            phone: p.phone || "",
-            gender: p.gender || "",
-          });
-        }
-      } catch (e) {
-        setErr(e?.message || "Failed to load profile");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [email]);
-
+  /* ---------------------- validators ---------------------- */
   const validators = {
     fname: (v) =>
       !v
@@ -90,8 +60,17 @@ export default function UpdateProfile() {
         : /^\+94\d{9}$/.test(v)
         ? ""
         : "Phone must start with +94 and have 9 digits after it.",
+    // gender is optional per model, but if provided must be Male/Female/""
     gender: (v) =>
-      v === "Male" || v === "Female" ? "" : "Select Male or Female.",
+      v === "" || v === "Male" || v === "Female"
+        ? ""
+        : "Select Male or Female.",
+    email: (v) =>
+      !v
+        ? ""
+        : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+        ? ""
+        : "Enter a valid email.",
   };
 
   const handleBlur = (field) => (e) => {
@@ -106,40 +85,85 @@ export default function UpdateProfile() {
     if (errors[field]) setErrors((er) => ({ ...er, [field]: "" }));
   };
 
-  const hasVisibleErrors =
-    !!errors.fname || !!errors.lname || !!errors.phone || !!errors.gender;
-
-  const requiredMissing =
-    !email || !form.fname || !form.lname || !form.phone || !form.gender;
-
+  const hasVisibleErrors = Object.values(errors).some(Boolean);
+  const requiredMissing = !form.fname || !form.lname || !form.phone; // gender & email optional now
   const canSave = !hasVisibleErrors && !requiredMissing;
 
+  /* ---------------------- load identity from cookie ---------------------- */
+  useEffect(() => {
+    // cookie name per your note
+    const p = Cookies.get("phoneNumber") || "";
+    setPhoneKey(p);
+  }, []);
+
+  /* ---------------------- fetch profile ---------------------- */
+  useEffect(() => {
+    if (!phoneKey) {
+      setLoading(false);
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      try {
+        const p = await getPassengerByPhone(phoneKey);
+        if (!mounted) return;
+        if (p) {
+          setForm({
+            fname: p.fname || "",
+            lname: p.lname || "",
+            phone: p.phone || phoneKey,
+            gender: p.gender ?? "",
+            email: p.email ?? "",
+          });
+        }
+      } catch (e) {
+        setErr(
+          e?.response?.data?.message || e?.message || "Failed to load profile"
+        );
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [phoneKey]);
+
+  /* ---------------------- submit ---------------------- */
   const onSubmit = async (e) => {
     e.preventDefault();
-    // validate once more
+
     const next = {
       fname: validators.fname(form.fname),
       lname: validators.lname(form.lname),
       phone: validators.phone(form.phone),
       gender: validators.gender(form.gender),
+      email: validators.email(form.email),
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
     try {
-      await updatePassengerByEmail({
-        email,
+      const updated = await updatePassengerByPhone(phoneKey, {
         fname: form.fname.trim(),
         lname: form.lname.trim(),
-        phone: form.phone,
-        gender: form.gender,
+        phone: form.phone, // allow phone change; backend handles uniqueness
+        gender: form.gender || "",
+        email: form.email || "",
       });
       toast.success("Profile updated successfully.");
+
+      // If phone changed, refresh cookie + key
+      if (updated?.phone && updated.phone !== phoneKey) {
+        Cookies.set("phoneNumber", updated.phone, { expires: 365 });
+        setPhoneKey(updated.phone);
+      }
     } catch (e) {
       toast.error(e?.response?.data?.message || e?.message || "Update failed");
     }
   };
 
+  /* ---------------------- UI ---------------------- */
   if (loading) {
     return (
       <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100">
@@ -169,7 +193,6 @@ export default function UpdateProfile() {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-[#2563EB]/10 to-[#16A34A]/10 py-8 mt-12">
       <Toaster />
-      {/* scenic photo layer like your Add Bus screen */}
       <div className="pointer-events-none absolute inset-0 opacity-20 mix-blend-screen" />
       <div className="relative mx-auto max-w-3xl px-4 py-10">
         <header className="mb-8 text-center">
@@ -179,30 +202,32 @@ export default function UpdateProfile() {
               Profile
             </span>
           </h1>
-          <p className="mt-2 text-slate-200/80">
-            Keep your contact details up to date. Last loaded: {fmtNow()}
-          </p>
+          <p className="mt-2 text-slate-200/80">Last loaded: {fmtNow()}</p>
+          {typeof form.walletBalance === "number" && (
+            <p className="mt-1 text-slate-100">
+              Wallet balance:{" "}
+              <strong>Rs. {form.walletBalance.toFixed(2)}</strong>
+            </p>
+          )}
         </header>
 
         <form
           onSubmit={onSubmit}
           className="rounded-3xl border border-white/20 bg-white/70 backdrop-blur-xl shadow-2xl p-6 md:p-8"
         >
-          {/* Email (read-only identity) */}
+          {/* Identity (cookie) */}
           <div className="mb-6">
             <label className="block text-sm font-semibold text-slate-800 mb-2">
-              Email (account)
+              Account Phone (from cookie)
             </label>
             <input
-              type="email"
-              value={email}
+              type="tel"
+              value={phoneKey}
               readOnly
               className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 shadow-sm"
             />
             <p className="text-xs text-slate-500 mt-1">
-              Email identifies your account. (If you need to change it, add a
-              separate
-              <em> Change Email </em> flow.)
+              Your account is identified by the <code>phoneNumber</code> cookie.
             </p>
           </div>
 
@@ -213,7 +238,7 @@ export default function UpdateProfile() {
               value={form.fname}
               onChange={handleChange("fname")}
               onBlur={handleBlur("fname")}
-              placeholder="e.g., Sarvayan"
+              placeholder="e.g., Nimal"
               error={errors.fname}
             />
             <Field
@@ -221,13 +246,13 @@ export default function UpdateProfile() {
               value={form.lname}
               onChange={handleChange("lname")}
               onBlur={handleBlur("lname")}
-              placeholder="e.g., Meenadchisundaram"
+              placeholder="e.g., Perera"
               error={errors.lname}
             />
           </div>
 
-          {/* Phone */}
-          <div className="mt-4">
+          {/* Phone & Email */}
+          <div className="grid md:grid-cols-2 gap-4 mt-4">
             <Field
               label="Phone (+94xxxxxxxxx)"
               value={form.phone}
@@ -237,21 +262,30 @@ export default function UpdateProfile() {
               error={errors.phone}
               type="tel"
             />
+            <Field
+              label="Email (optional)"
+              value={form.email}
+              onChange={handleChange("email")}
+              onBlur={handleBlur("email")}
+              placeholder="you@example.com"
+              error={errors.email}
+              type="email"
+            />
           </div>
 
-          {/* Gender + Save */}
+          {/* Gender + Buttons */}
           <div className="mt-4 grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-2">
                 Gender
               </label>
               <select
-                value={form.gender}
+                value={form.gender ?? ""}
                 onChange={handleChange("gender")}
                 onBlur={handleBlur("gender")}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
               >
-                <option value="">Select Gender</option>
+                <option value="">Prefer not to say</option>
                 <option>Male</option>
                 <option>Female</option>
               </select>
@@ -259,21 +293,19 @@ export default function UpdateProfile() {
                 <p className="text-rose-600 text-xs mt-1">{errors.gender}</p>
               )}
             </div>
-            <button
-              className={`ml-auto inline-flex items-center gap-2 rounded-xl px-6 py-3 font-semibold text-white shadow transition
-                bg-slate-400 cursor-not-allowed"
-                }`}
-              onClick={() => navigate("/bookingHistory")}
-            >
-              Booking History
-            </button>
 
-            <div className="flex items-end">
+            <div className="flex items-end gap-3 justify-end">
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-xl px-6 py-3 font-semibold text-white shadow transition bg-indigo-600 hover:bg-indigo-700"
+                onClick={() => navigate("/bookingHistory")}
+              >
+                Booking History
+              </button>
               <button
                 type="submit"
                 disabled={!canSave}
-                className={`ml-auto inline-flex items-center gap-2 rounded-xl px-6 py-3 font-semibold text-white shadow transition
-                ${
+                className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 font-semibold text-white shadow transition ${
                   canSave
                     ? "bg-emerald-600 hover:bg-emerald-700"
                     : "bg-slate-400 cursor-not-allowed"
@@ -287,15 +319,12 @@ export default function UpdateProfile() {
         </form>
       </div>
 
-      {/* print rules are not needed here but kept as example */}
-      <style>{`
-        @media print { .print\\:hidden { display:none } }
-      `}</style>
+      <style>{`@media print { .print\\:hidden { display:none } }`}</style>
     </div>
   );
 }
 
-/* ------------------------------- UI atoms --------------------------------- */
+/* ------------------------------ UI atom ------------------------------ */
 function Field({
   label,
   value,
@@ -316,8 +345,7 @@ function Field({
         onChange={onChange}
         onBlur={onBlur}
         placeholder={placeholder}
-        className={`w-full rounded-xl border px-4 py-3 text-slate-900 shadow-sm outline-none
-        ${
+        className={`w-full rounded-xl border px-4 py-3 text-slate-900 shadow-sm outline-none ${
           error
             ? "border-rose-500 focus:border-rose-500 focus:ring-2 focus:ring-rose-200"
             : "border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"

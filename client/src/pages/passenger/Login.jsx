@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   RecaptchaVerifier,
@@ -18,6 +18,9 @@ import {
 } from "firebase/firestore";
 import RoleContext from "../../components/common/RoleContext";
 import { toE164 } from "../../utils/phone";
+import { FiSmartphone, FiShield, FiRotateCw } from "react-icons/fi";
+import { HiOutlineLockClosed } from "react-icons/hi";
+import COUNTRIES from "../../data/countries";
 
 const DEFAULT_ROLE = "passenger";
 const USERS_COLLECTION = "users";
@@ -54,7 +57,7 @@ function Login() {
       theme: "colored",
     });
 
-  // Initialize invisible reCAPTCHA exactly once, and watch auth state
+  // Initialize invisible reCAPTCHA once, and watch auth state
   useEffect(() => {
     if (!window.recaptchaVerifier) {
       window.recaptchaVerifier = new RecaptchaVerifier(
@@ -66,7 +69,6 @@ function Login() {
       );
     }
     const unsub = onAuthStateChanged(auth, (user) => {
-      // If already signed in (e.g., page reload after successful login), go home
       if (user) navigate("/home");
     });
     return () => unsub();
@@ -98,7 +100,6 @@ function Login() {
       return { role, phoneNumber: phoneE164 };
     }
 
-    // If exists, read role & phoneNumber; backfill any missing values.
     const data = snap.data() || {};
     let { role, phoneNumber } = data;
 
@@ -148,7 +149,6 @@ function Login() {
       setResendCooldown(30);
       notify("OTP sent to your phone.", "success");
     } catch (err) {
-      // Common Firebase Auth phone errors handled with nicer messages
       const code = err?.code || "";
       if (code === "auth/invalid-phone-number") {
         notify("Invalid phone number. Please check and try again.");
@@ -180,19 +180,16 @@ function Login() {
     try {
       const credential = await confirmationResult.confirm(otp);
       const user = credential.user;
-      const phoneE164 = user.phoneNumber; // Verified E.164 from Firebase
+      const phoneE164 = user.phoneNumber;
 
-      // Create or read Firestore user doc, ensuring both phoneNumber & role are set.
       const { role, phoneNumber } = await ensureUserDocument(
         user.uid,
         phoneE164
       );
-
-      // Persist session (cookies + localStorage + RoleContext)
       persistSession(role, phoneNumber);
 
       notify("Login successful!", "success");
-      navigate("/home");
+      navigate("/");
     } catch (err) {
       const code = err?.code || "";
       if (code === "auth/invalid-verification-code") {
@@ -202,7 +199,6 @@ function Login() {
       } else {
         notify(err?.message || "Verification failed. Please try again.");
       }
-      // after a failed confirmation, rebuild recaptcha to be safe
       resetRecaptcha();
     } finally {
       setIsVerifying(false);
@@ -216,174 +212,180 @@ function Login() {
   };
 
   return (
-    <>
+    <div className="fixed inset-0 overflow-hidden">
       {/* Required container for Firebase reCAPTCHA (invisible) */}
       <div id="recaptcha-container" />
 
-      <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] px-4 py-8">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#2563EB]/5 to-[#16A34A]/5" />
+      {/* Two-column layout: image left, form right */}
+      <div className="h-full w-full grid grid-cols-1 lg:grid-cols-2">
+        {/* Left: Hero Image */}
+        <div className="relative hidden lg:block">
+          <img
+            src="src/assets/images/bus-login.jpeg"
+            alt="Modern coach bus parked at terminal"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          {/* Caption / overlay content (no bg color; just text with shadow for contrast) */}
+        </div>
 
-        <div className="relative w-full max-w-md bg-white/80 backdrop-blur-md rounded-2xl shadow-2xl overflow-hidden z-10 border border-[#2563EB]/10">
-          <div className="bg-gradient-to-r from-[#2563EB]/90 to-[#16A34A]/90 p-8 text-center text-white backdrop-blur-sm">
-            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg
-                className="w-8 h-8 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                />
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
-            <p className="text-white/90 text-lg">Sign in with your phone</p>
-          </div>
-
-          {/* Step: Enter Phone */}
-          {step === "enterPhone" && (
-            <form onSubmit={handleSendOtp} className="p-8 space-y-6">
+        {/* Right: Auth Card */}
+        <div className="flex items-center justify-center px-4 h-full">
+          <div className="w-full max-w-md">
+            {/* Header */}
+            <div className="mb-2 flex items-center gap-2">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl ring-1 ring-black/10">
+                <HiOutlineLockClosed className="text-xl text-slate-800" />
+              </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  Phone Number
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    className="w-28 px-3 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                  >
-                    <option value="+94">LK +94</option>
-                    <option value="+91">IN +91</option>
-                    <option value="+971">AE +971</option>
-                    <option value="+1">US +1</option>
-                    <option value="+44">UK +44</option>
-                  </select>
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="flex-1 px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
-                    placeholder="7xxxxxxxx (no leading 0)"
-                    required
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-2 bg-[#F9FAFB] p-2 rounded border border-gray-200">
-                  You’ll receive a 6-digit code via SMS.
+                <h1 className="text-xl font-bold tracking-tight text-slate-900">
+                  Sign in to Leoforeio
+                </h1>
+                <p className="text-xs text-slate-600">
+                  Use your verified mobile number to continue
                 </p>
               </div>
+            </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSending}
-                  className={`w-full py-4 px-4 rounded-lg font-semibold text-white transition duration-200 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] cursor-pointer ${
-                    isSending
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-gradient-to-r from-[#2563EB] to-[#16A34A] hover:from-[#1d4ed8] hover:to-[#15803d] hover:shadow-xl transform hover:scale-[1.02]"
-                  }`}
-                >
-                  {isSending ? "Sending..." : "Send OTP"}
-                </button>
-              </div>
+            <div className="rounded-2xl border border-black/10 bg-white shadow-xl transition-all">
+              {/* Step: Enter Phone */}
+              {step === "enterPhone" && (
+                <form onSubmit={handleSendOtp} className="p-5 space-y-4">
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-slate-800">
+                      Phone Number
+                    </label>
+                    <div className="flex gap-2">
+                      <div
+                        className="relative"
+                        style={{ position: "relative" }}
+                      >
+                        <FiSmartphone className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10" />
+                        <select
+                          className="w-36 appearance-none rounded-lg border border-slate-300 bg-white pl-9 pr-8 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+                          value={countryCode}
+                          onChange={(e) => setCountryCode(e.target.value)}
+                          style={{
+                            position: "relative",
+                            zIndex: 1,
+                          }}
+                        >
+                          {COUNTRIES.map((country) => (
+                            <option key={country.code} value={country.dial}>
+                              {country.code} {country.dial}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+                        placeholder="7xxxxxxxx (no leading 0)"
+                        required
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      We’ll send a 6-digit verification code via SMS.
+                    </p>
+                  </div>
 
-              <div className="relative py-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300" />
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-3 bg-white text-gray-500">
-                    Need to create an account?
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row justify-between gap-3 text-center">
-                <button
-                  type="button"
-                  onClick={() => navigate("/signup")}
-                  className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-                >
-                  Continue to Sign Up
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("/help")}
-                  className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-                >
-                  Need help?
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Step: Enter OTP */}
-          {step === "enterOtp" && (
-            <form onSubmit={handleVerifyOtp} className="p-8 space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  Enter 6-digit OTP
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="\d*"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                  className="w-full px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200 tracking-widest text-center text-lg"
-                  placeholder="••••••"
-                  required
-                />
-                <div className="flex items-center justify-between mt-3">
                   <button
-                    type="button"
-                    onClick={() => setStep("enterPhone")}
-                    className="text-sm text-gray-600 hover:underline"
-                  >
-                    Change phone number
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResend}
-                    disabled={resendCooldown > 0}
-                    className={`text-sm font-semibold ${
-                      resendCooldown > 0
-                        ? "text-gray-400 cursor-not-allowed"
-                        : "text-[#2563EB] hover:text-[#16A34A]"
+                    type="submit"
+                    disabled={isSending}
+                    className={`w-full rounded-lg px-4 py-3 font-semibold text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                      isSending
+                        ? "bg-slate-400 cursor-not-allowed"
+                        : "bg-blue-900 hover:bg-blue-700 active:scale-[0.99]"
                     }`}
                   >
-                    {resendCooldown > 0
-                      ? `Resend in ${resendCooldown}s`
-                      : "Resend OTP"}
+                    {isSending ? "Sending…" : "Send OTP"}
                   </button>
-                </div>
-              </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isVerifying}
-                  className={`w-full py-4 px-4 rounded-lg font-semibold text-white transition duration-200 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] cursor-pointer ${
-                    isVerifying
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-gradient-to-r from-[#2563EB] to-[#16A34A] hover:from-[#1d4ed8] hover:to-[#15803d] hover:shadow-xl transform hover:scale-[1.02]"
-                  }`}
-                >
-                  {isVerifying ? "Verifying..." : "Verify & Continue"}
-                </button>
-              </div>
-            </form>
-          )}
+                  <div className="flex justify-between text-sm">
+                    <button
+                      type="button"
+                      onClick={() => navigate("/help")}
+                      className="font-medium text-blue-700 hover:text-blue-800 hover:underline"
+                    >
+                      Need help?
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Step: Enter OTP */}
+              {step === "enterOtp" && (
+                <form onSubmit={handleVerifyOtp} className="p-5 space-y-4">
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-slate-800">
+                      Enter 6-digit OTP
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
+                      maxLength={6}
+                      value={otp}
+                      onChange={(e) =>
+                        setOtp(e.target.value.replace(/\D/g, ""))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-center text-lg tracking-widest text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+                      placeholder="••••••"
+                      required
+                    />
+                    <div className="mt-3 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setStep("enterPhone")}
+                        className="text-sm text-slate-600 hover:text-slate-800 hover:underline"
+                      >
+                        Change phone number
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleResend}
+                        disabled={resendCooldown > 0}
+                        className={`inline-flex items-center gap-2 text-sm font-semibold ${
+                          resendCooldown > 0
+                            ? "text-slate-400 cursor-not-allowed"
+                            : "text-blue-700 hover:text-blue-800"
+                        }`}
+                      >
+                        <FiRotateCw className="text-base" />
+                        {resendCooldown > 0
+                          ? `Resend in ${resendCooldown}s`
+                          : "Resend OTP"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isVerifying}
+                    className={`w-full rounded-lg px-4 py-3 font-semibold text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                      isVerifying
+                        ? "bg-slate-400 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700 active:scale-[0.99]"
+                    }`}
+                  >
+                    {isVerifying ? "Verifying…" : "Verify & Continue"}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* Small print */}
+            <p className="mt-4 text-xs text-slate-500">
+              By continuing, you agree to our Terms & Privacy Policy.
+            </p>
+          </div>
         </div>
       </div>
+
       <ToastContainer />
-    </>
+    </div>
   );
 }
 

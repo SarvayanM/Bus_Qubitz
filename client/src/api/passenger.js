@@ -7,11 +7,20 @@ export async function createPassenger(payload) {
 }
 
 // E.164 like +94771234567
+
 export async function getPassengerByPhone(phone) {
-  const { data } = await http.get(`/api/passengers/by-phone`, {
-    params: { phone },
-  });
-  return data || null;
+  const { data } = await http.get(
+    `/passengers/by-phone/${encodeURIComponent(phone)}`
+  );
+  return data?.passenger;
+}
+
+export async function updatePassengerByPhone(phone, payload) {
+  const { data } = await http.patch(
+    `/passengers/by-phone/${encodeURIComponent(phone)}`,
+    payload
+  );
+  return data?.passenger;
 }
 
 export async function getPassengerByEmail(email) {

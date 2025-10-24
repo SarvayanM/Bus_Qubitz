@@ -9,6 +9,7 @@ html,
 body,
 #root {
   min-height: 100%;
+  background-color: #f9fafb; /* bg-gray-50 */
 }
 
 html,
@@ -58,4 +59,11 @@ body {
 /* Toasts overlay above everything */
 .Toastify__toast-container {
   z-index: 999999 !important;
+}
+
+/* Force select dropdown to open downward */
+select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
 }

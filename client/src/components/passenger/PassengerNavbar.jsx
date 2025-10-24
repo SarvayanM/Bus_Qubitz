@@ -1,94 +1,236 @@
-import React, { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
-import { FaUser, FaBus, FaHome, FaSignOutAlt } from "react-icons/fa";
-import { motion } from "framer-motion";
+// frontend/src/components/PassengerNavbar.jsx
+import React, { useEffect, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
+import { FaHome, FaUser, FaBus, FaSignOutAlt, FaWallet } from "react-icons/fa";
+import { HiMenuAlt3, HiX } from "react-icons/hi";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function PassengerNavbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const location = useLocation();
 
+  // Shadow on scroll (navbar stays white)
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 10);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
+
+  // Desktop + mobile nav config (includes Wallet)
   const navItems = [
-    { path: "/", label: "Home", icon: <FaHome /> },
-    { path: "/updateProfile", label: "Profile", icon: <FaUser /> },
-    { path: "/busBookingDashboard", label: "Book Bus", icon: <FaBus /> },
-    { path: "/logout", label: "Logout", icon: <FaSignOutAlt /> },
+    { path: "/", label: "Home", icon: <FaHome className="text-lg" /> },
+    {
+      path: "/updateProfile",
+      label: "Profile",
+      icon: <FaUser className="text-lg" />,
+    },
+    {
+      path: "/busBookingDashboard",
+      label: "Book Bus",
+      icon: <FaBus className="text-lg" />,
+    },
+    {
+      path: "/wallet",
+      label: "Wallet",
+      icon: <FaWallet className="text-lg" />,
+    },
+    {
+      path: "/logout",
+      label: "Logout",
+      icon: <FaSignOutAlt className="text-lg" />,
+    },
   ];
 
+  // Animations (matching Navbar.jsx vibe)
+  const navVariants = {
+    hidden: { y: -100, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 100,
+        damping: 20,
+        duration: 0.5,
+      },
+    },
+  };
+
+  const mobileMenuVariants = {
+    closed: { opacity: 0, x: "100%", transition: { duration: 0.25 } },
+    open: {
+      opacity: 1,
+      x: 0,
+      transition: {
+        type: "spring",
+        stiffness: 300,
+        damping: 30,
+        duration: 0.35,
+      },
+    },
+  };
+
+  const itemVariants = {
+    closed: { x: 12, opacity: 0 },
+    open: (i) => ({
+      x: 0,
+      opacity: 1,
+      transition: { delay: i * 0.08, duration: 0.25 },
+    }),
+  };
+
   return (
-    <header className="fixed top-0 left-0 w-full bg-white shadow-md z-50">
-      <div className="max-w-7xl mx-auto flex items-center justify-between p-4">
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-2">
-          <img
-            src="/bus-logo.png"
-            alt="Logo"
-            className="w-12 h-12 object-contain"
-          />
-          <h1 className="text-2xl font-bold text-gray-800 tracking-wide">
-            Leoforeio
-          </h1>
-        </Link>
-
-        {/* Animated Bus */}
-        <div className="relative w-48 h-10 hidden md:flex justify-center overflow-hidden">
-          <motion.img
-            src="/bus-icon.png"
-            alt="Bus"
-            className="absolute bottom-0 w-10 h-10"
-            initial={{ x: -200 }}
-            animate={{ x: 200 }}
-            transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-          />
-        </div>
-
-        {/* Desktop Nav */}
-        <nav className="hidden md:flex gap-6 items-center">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                `flex items-center gap-2 text-gray-700 font-medium hover:text-blue-600 transition-colors duration-200 ${
-                  isActive ? "text-blue-600 border-b-2 border-blue-600" : ""
-                }`
-              }
+    <motion.header
+      className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 bg-white ${
+        isScrolled ? "shadow-lg" : "shadow-sm"
+      }`}
+      initial="hidden"
+      animate="visible"
+      variants={navVariants}
+      role="banner"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between">
+          {/* Brand */}
+          <motion.div
+            className="flex items-center gap-3"
+            whileHover={{ scale: 1.03 }}
+            transition={{ type: "spring", stiffness: 400 }}
+          >
+            <Link
+              to="/"
+              className="flex items-center gap-3"
+              onClick={closeMobileMenu}
             >
-              {item.icon}
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+              <div className="p-2 rounded-xl bg-white flex items-center justify-center">
+                <img
+                  src="src/assets/images/bus-logo-2.png"
+                  alt="Bus Logo"
+                  className="w-15 h-12 object-contain"
+                />
+              </div>
+              <span className="text-2xl font-bold text-blue-900">
+                Leoforeio
+              </span>
+            </Link>
+          </motion.div>
 
-        {/* Mobile Menu Button */}
-        <button
-          className="md:hidden text-gray-700 text-2xl focus:outline-none"
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        >
-          ☰
-        </button>
+          {/* Desktop Nav */}
+          <nav className="hidden md:flex items-center gap-1">
+            {navItems.map((item) => (
+              <motion.div
+                key={item.path}
+                whileHover={{ y: -2 }}
+                transition={{ type: "spring", stiffness: 400 }}
+              >
+                <NavLink
+                  to={item.path}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-200 ${
+                      isActive
+                        ? "bg-blue-900 text-white"
+                        : "text-black hover:bg-blue-100"
+                    }`
+                  }
+                >
+                  {item.icon}
+                  <span className="font-semibold">{item.label}</span>
+                </NavLink>
+              </motion.div>
+            ))}
+          </nav>
+
+          {/* Mobile Menu Button */}
+          <motion.button
+            className="md:hidden p-2 rounded-lg text-black hover:bg-gray-100 transition-colors duration-200"
+            onClick={() => setIsMobileMenuOpen((v) => !v)}
+            whileTap={{ scale: 0.95 }}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-menu"
+            aria-label="Toggle navigation menu"
+          >
+            {isMobileMenuOpen ? (
+              <HiX className="text-2xl" />
+            ) : (
+              <HiMenuAlt3 className="text-2xl" />
+            )}
+          </motion.button>
+        </div>
       </div>
 
-      {/* Mobile Menu */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden bg-white shadow-lg border-t border-gray-200">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={({ isActive }) =>
-                `block px-6 py-3 text-gray-700 font-medium hover:bg-blue-50 transition-colors duration-200 ${
-                  isActive ? "text-blue-600 bg-blue-50" : ""
-                }`
-              }
-            >
-              <div className="flex items-center gap-3">
-                {item.icon}
-                {item.label}
+      {/* Mobile Fullscreen Navigation */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.nav
+            id="mobile-menu"
+            className="fixed inset-0 z-40 md:hidden bg-white"
+            variants={mobileMenuVariants}
+            initial="closed"
+            animate="open"
+            exit="closed"
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Top bar inside sheet */}
+            <div className="flex items-center justify-between h-16 px-4 border-b border-blue-200">
+              <span className="sr-only">Passenger mobile navigation</span>
+              <button
+                onClick={closeMobileMenu}
+                className="ml-auto p-2 rounded-lg text-black hover:bg-blue-100 transition-colors"
+                aria-label="Close navigation menu"
+              >
+                <HiX className="text-2xl" />
+              </button>
+            </div>
+
+            {/* Menu Items */}
+            <div className="bg-white px-4 py-6">
+              <div className="space-y-2">
+                {navItems.map((item, index) => (
+                  <motion.div
+                    key={item.path}
+                    custom={index}
+                    variants={itemVariants}
+                    initial="closed"
+                    animate="open"
+                  >
+                    <NavLink
+                      to={item.path}
+                      onClick={closeMobileMenu}
+                      className={({ isActive }) =>
+                        [
+                          "flex items-center gap-3 w-full",
+                          "rounded-xl px-4 py-4",
+                          "text-base font-semibold",
+                          "border border-gray-200",
+                          "focus:outline-none focus:ring-2 focus:ring-blue-200",
+                          isActive
+                            ? "bg-blue-900 text-white border-blue-900"
+                            : "bg-white text-black hover:bg-blue-50",
+                        ].join(" ")
+                      }
+                    >
+                      <span
+                        className={`text-lg ${
+                          location.pathname === item.path
+                            ? "opacity-100"
+                            : "opacity-70"
+                        }`}
+                      >
+                        {item.icon}
+                      </span>
+                      <span>{item.label}</span>
+                    </NavLink>
+                  </motion.div>
+                ))}
               </div>
-            </NavLink>
-          ))}
-        </div>
-      )}
-    </header>
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
+    </motion.header>
   );
 }

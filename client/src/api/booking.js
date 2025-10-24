@@ -26,8 +26,8 @@ export async function getBookingListByBusAndDate(busId, travelDate) {
 // api/booking.js (or wherever your http instance is used)
 export async function getPassengerBookingHistory(email) {
   const url = email
-    ? `/api/bookings/history?email=${encodeURIComponent(email)}`
-    : `/api/bookings/history`;
+    ? `/api/bookings/passenger-history?email=${encodeURIComponent(email)}`
+    : `/api/bookings/passenger-history`;
 
   const { data } = await http.get(url, {
     withCredentials: true,
@@ -40,4 +40,19 @@ export async function getPassengerBookingHistory(email) {
 
   // IMPORTANT: return the full response object so the page can use .bookings, .email, .count
   return data;
+}
+
+export async function getPassengerBookingHistoryByPhone(phone) {
+  const { data } = await http.get(`/api/bookings/history`, {
+    params: { phone },
+  });
+  return data;
+}
+
+// Cancel booking with reason (server computes eligibility + refund)
+export async function cancelBookingById(bookingId, { reason }) {
+  const { data } = await http.post(`/api/bookings/${bookingId}/cancel`, {
+    reason,
+  });
+  return data; // { refundedAmount, refundPercent, walletBalance, booking }
 }
