@@ -263,9 +263,20 @@ export default function Journeys() {
     return { label: "Book for Tomorrow", date: tomorrowISO() };
   };
 
+  const isFilterApplied = Boolean(
+    applied?.from && applied?.to && applied?.date
+  );
+
+  const getCardButtonLabel = (bus) => {
+    if (isFilterApplied) return "Book Now";
+    return bookLabelAndDateForBus(bus).label;
+  };
+
   // When clicking the Book button on a card: compute date and navigate to dashboard
   const handleCardBook = (bus) => {
-    const { date } = bookLabelAndDateForBus(bus);
+    const date = isFilterApplied
+      ? applied.date
+      : bookLabelAndDateForBus(bus).date;
     const from = (bus?.route?.from || bus?.from || "").trim();
     const to = (bus?.route?.to || bus?.to || "").trim();
     // Build query the same way SelectedBusDetails expects
@@ -443,14 +454,7 @@ export default function Journeys() {
                 Search
               </button>
 
-              <button
-                onClick={handleBookNow}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white shadow hover:bg-emerald-700 active:scale-[0.99] transition"
-                title="Book Now"
-              >
-                <FaTicketAlt />
-                Book Now
-              </button>
+              {/* Book Now button removed from filter area by default per UX request */}
 
               <button
                 onClick={onClear}
@@ -597,7 +601,7 @@ export default function Journeys() {
                         title="Book this bus"
                       >
                         <FaTicketAlt className="text-white/90" />
-                        <span>{bookLabelAndDateForBus(bus).label}</span>
+                        <span>{getCardButtonLabel(bus)}</span>
                       </button>
                     </div>
                   </motion.div>
