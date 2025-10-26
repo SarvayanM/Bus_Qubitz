@@ -3,7 +3,7 @@ import Bus from "../models/Bus.js";
 import Passenger from "../models/Passenger.js";
 import CancelBooking from "../models/CancelBooking.js";
 import { toDepartureDate, refundPercent } from "../utils/cancelHelpers.js";
-// import mongoose from "mongoose";
+import mongoose from "mongoose";
 // minimal model shown below (if needed)
 
 /**
@@ -107,23 +107,182 @@ export async function createBooking(req, res) {
       return { number, gender: s.gender };
     });
 
-    // Create the booking
-    const doc = await Booking.create({
-      busId,
-      travelDate,
-      seats: normalizedSeats,
-      passenger,
-      pickup,
-      drop,
-      payment,
-      ...meta,
-    });
+    // Atomic operation: ensure Passenger exists (create if missing) and create Booking
+    const phone = normalizePhone(passenger.phone);
 
-    return res.status(201).json({
-      success: true,
-      message: "Booking created",
-      data: { booking: doc }, // <— always put payload under `data`
-    });
+    let session = null;
+    let usedTransaction = false;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+      usedTransaction = true;
+    } catch (sessErr) {
+      // Could not start a session (e.g., standalone MongoDB). We'll fall back to non-transactional path.
+      console.warn(
+        "Warning: could not start mongoose session; continuing without transaction",
+        sessErr?.message
+      );
+      session = null;
+      usedTransaction = false;
+    }
+
+    try {
+      let doc;
+      if (usedTransaction && session) {
+        const existingPassenger = await Passenger.findOne({ phone }).session(
+          session
+        );
+        if (!existingPassenger) {
+          try {
+            await Passenger.create(
+              [
+                {
+                  phone,
+                  fname: passenger.fname || "",
+                  lname: passenger.lname || "",
+                },
+              ],
+              { session }
+            );
+          } catch (pe) {
+            if (pe?.code === 11000) {
+              // ignore - another request created it in parallel
+            } else {
+              throw pe;
+            }
+          }
+        }
+
+        // Before creating booking, check for seat conflicts for this bus/date
+        const [busDoc, existingBookings] = await Promise.all([
+          Bus.findById(busId, { unavailable: 1 }).session(session),
+          Booking.find({ busId, travelDate }, { seats: 1 }).session(session),
+        ]);
+
+        const unavailableSeats = new Set(
+          (busDoc?.unavailable || []).map((s) => Number(s.number ?? s))
+        );
+        const alreadyBooked = new Set();
+        existingBookings.forEach((bk) => {
+          (bk.seats || []).forEach((s) => alreadyBooked.add(Number(s.number)));
+        });
+
+        const requested = normalizedSeats.map((s) => Number(s.number));
+        const conflicts = requested.filter(
+          (n) => alreadyBooked.has(n) || unavailableSeats.has(n)
+        );
+        if (conflicts.length) {
+          // Abort transaction and inform client which seat numbers conflict
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(409).json({
+            message: "Requested seats are no longer available",
+            conflicts,
+          });
+        }
+
+        // Create booking within the same transaction
+        [doc] = await Booking.create(
+          [
+            {
+              busId,
+              travelDate,
+              seats: normalizedSeats,
+              passenger: {
+                fname: passenger.fname || "",
+                lname: passenger.lname || "",
+                phone,
+              },
+              pickup,
+              drop,
+              payment,
+              ...meta,
+            },
+          ],
+          { session }
+        );
+
+        await session.commitTransaction();
+        session.endSession();
+      } else {
+        // Fallback: no transactions available. Attempt to create passenger (idempotent) then booking.
+        try {
+          // create passenger if not exists (race may still cause duplicate key but we'll catch it)
+          await Passenger.findOneAndUpdate(
+            { phone },
+            {
+              $setOnInsert: {
+                phone,
+                fname: passenger.fname || "",
+                lname: passenger.lname || "",
+              },
+            },
+            { upsert: true, new: true }
+          );
+        } catch (pe) {
+          if (pe?.code === 11000) {
+            // ignore duplicate key created concurrently
+          } else {
+            throw pe;
+          }
+        }
+
+        // Check seat conflicts without a transaction
+        const [busDoc, existingBookings] = await Promise.all([
+          Bus.findById(busId, { unavailable: 1 }),
+          Booking.find({ busId, travelDate }, { seats: 1 }),
+        ]);
+        const unavailableSeats = new Set(
+          (busDoc?.unavailable || []).map((s) => Number(s.number ?? s))
+        );
+        const alreadyBooked = new Set();
+        existingBookings.forEach((bk) => {
+          (bk.seats || []).forEach((s) => alreadyBooked.add(Number(s.number)));
+        });
+        const requested = normalizedSeats.map((s) => Number(s.number));
+        const conflicts = requested.filter(
+          (n) => alreadyBooked.has(n) || unavailableSeats.has(n)
+        );
+        if (conflicts.length) {
+          return res.status(409).json({
+            message: "Requested seats are no longer available",
+            conflicts,
+          });
+        }
+
+        const created = await Booking.create({
+          busId,
+          travelDate,
+          seats: normalizedSeats,
+          passenger: {
+            fname: passenger.fname || "",
+            lname: passenger.lname || "",
+            phone,
+          },
+          pickup,
+          drop,
+          payment,
+          ...meta,
+        });
+        doc = created;
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Booking created",
+        data: { booking: doc },
+      });
+    } catch (txErr) {
+      if (session && usedTransaction) {
+        try {
+          await session.abortTransaction();
+        } catch (abortErr) {
+          console.warn("Failed to abort transaction", abortErr?.message);
+        }
+        session.endSession();
+      }
+      throw txErr;
+    }
   } catch (e) {
     // Duplicate / validation clarity
     if (e?.code === 11000) {

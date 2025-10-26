@@ -6,44 +6,40 @@ const toInt = (v, fallback) => {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
+// Escape user input before creating RegExp to avoid special-character issues
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export async function getJourneys(req, res) {
   try {
-    const {
-      from = "",
-      to = "",
-      date = "",
-      page = "1",
-      limit = "8",
-    } = req.query;
+    let { from = "", to = "", date = "", page = "1", limit = "8" } = req.query;
+
+    // Trim inputs
+    from = typeof from === "string" ? from.trim() : from;
+    to = typeof to === "string" ? to.trim() : to;
+    date = typeof date === "string" ? date.trim() : date;
 
     const pageNum = toInt(page, 1);
     const limitNum = Math.min(toInt(limit, 8), 48);
     const skip = (pageNum - 1) * limitNum;
 
+    // Build base match only using from/to (do NOT filter by date here)
     const match = {};
-    if (from) match["route.from"] = { $regex: new RegExp(from, "i") };
-    if (to) match["route.to"] = { $regex: new RegExp(to, "i") };
+    if (from) {
+      match["route.from"] = { $regex: new RegExp(escapeRegExp(from), "i") };
+    }
+    if (to) {
+      match["route.to"] = { $regex: new RegExp(escapeRegExp(to), "i") };
+    }
 
-    let weekday = null;
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date))
-      weekday = new Date(date + "T00:00:00").getDay();
-
+    // Build pipeline:
+    //  - match by from/to only
+    //  - lookup company
+    //  - optionally lookup bookings for the specific date (to compute seatsBooked/seatsAvailable)
+    //  - compute fields
+    //  - sort/skip/limit & facet for total
     const pipeline = [
       { $match: match },
-      ...(weekday !== null
-        ? [
-            {
-              $match: {
-                $or: [
-                  {
-                    "schedule.days": { $exists: true, $ne: [], $in: [weekday] },
-                  },
-                  { operatingDates: { $exists: true, $in: [date] } },
-                ],
-              },
-            },
-          ]
-        : []),
+
       {
         $lookup: {
           from: "companies",
@@ -53,7 +49,8 @@ export async function getJourneys(req, res) {
         },
       },
       { $unwind: { path: "$company", preserveNullAndEmptyArrays: true } },
-      // Lookup bookings for the specified date to calculate available seats
+
+      // If date provided, lookup bookings for that date to compute seatsBooked
       ...(date
         ? [
             {
@@ -66,20 +63,37 @@ export async function getJourneys(req, res) {
                       $expr: {
                         $and: [
                           { $eq: ["$busId", "$$busId"] },
+                          // travelDate may be stored as a string 'YYYY-MM-DD' in bookings
+                          // or as Date — the equality below assumes the stored value equals `date`.
+                          // If you store travelDate as an ISO Date, convert accordingly in queries.
                           { $eq: ["$travelDate", date] },
                           { $ne: ["$status", "Cancelled"] },
                         ],
                       },
                     },
                   },
-                  { $unwind: "$seats" },
-                  { $group: { _id: null, count: { $sum: 1 } } },
+                  // If seats are stored as an array of seat objects/ids in booking.seats, unwind & count
+                  {
+                    $unwind: {
+                      path: "$seats",
+                      preserveNullAndEmptyArrays: true,
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      count: {
+                        $sum: { $cond: [{ $ifNull: ["$seats", false] }, 1, 0] },
+                      },
+                    },
+                  },
                 ],
                 as: "bookings",
               },
             },
           ]
         : []),
+
       {
         $addFields: {
           operatorName: { $ifNull: ["$company.name", "$busName"] },
@@ -94,7 +108,8 @@ export async function getJourneys(req, res) {
           },
           seatsAvailable: {
             $cond: {
-              if: date,
+              // if date provided, subtract booked seats; otherwise leave as total seats
+              if: date && date !== "",
               then: {
                 $subtract: [
                   "$seats",
@@ -106,6 +121,7 @@ export async function getJourneys(req, res) {
           },
         },
       },
+
       {
         $facet: {
           pageData: [

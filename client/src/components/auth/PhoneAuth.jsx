@@ -200,16 +200,9 @@ export default function PhoneAuth({
       // Ensure Firestore user (phoneNumber + role)
       const { role } = await ensureFirestoreUser(user.uid, phoneE164);
 
-      // Ensure Mongo passenger (create only if absent)
+      // Ensure Mongo passenger exists: try to fetch, but DO NOT create here.
+      // Passenger creation happens only when the user confirms booking (Done).
       let passenger = await getPassengerByPhone(phoneE164).catch(() => null);
-      if (!passenger) {
-        const names = (typeof getNames === "function" ? getNames() : {}) || {};
-        passenger = await createPassenger({
-          phone: phoneE164,
-          fname: names.fname || "",
-          lname: names.lname || "",
-        });
-      }
 
       // Persist local session + cookies and lift up
       persistSession(role, phoneE164);

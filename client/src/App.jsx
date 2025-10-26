@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 
 import "react-toastify/dist/ReactToastify.css";
+import Cookies from "js-cookie";
 
 // import appBg from "./assets/images/bg.jpg";
 import RoleContext from "./components/common/RoleContext";
@@ -56,6 +57,17 @@ function AppContent() {
     setUserRole(localStorage.getItem("role"));
   }, [pathname]);
 
+  // If user is logged in and we have a stored userPhone, ensure cookie is set so
+  // PhoneAuth and other flows can pick it up (avoids re-verification UX).
+  useEffect(() => {
+    const phone = localStorage.getItem("userPhone");
+    const role = localStorage.getItem("role");
+    if (role && phone && !Cookies.get("phone")) {
+      Cookies.set("phone", phone, { expires: 30 });
+      Cookies.set("phone_verified", "true", { expires: 30 });
+    }
+  }, [pathname]);
+
   const roleContextValue = {
     userRole,
     setUserRole: (newRole) => {
@@ -74,7 +86,7 @@ function AppContent() {
         {!hideNavbar && (
           <header className="sticky top-0 z-50 bg-[#1D1E2C]/95 backdrop-blur-sm">
             {userRole === "passenger" ? (
-              <PassengerNavbar />
+              <Navbar />
             ) : userRole === "busOwner" ? (
               <BusOwnerNavbar />
             ) : (

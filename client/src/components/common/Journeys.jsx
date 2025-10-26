@@ -12,9 +12,65 @@ import {
   FaBuilding,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import { fetchJourneys } from "../../api/journeys";
 import { getBuses } from "../../api/bus";
 import { useNavigate } from "react-router-dom";
+
+// Parse flexible time strings into minutes since midnight (0-1439)
+function parseTimeFlexible(t) {
+  if (t == null) return null;
+  let s = String(t).trim();
+  if (!s || s === "—" || s === "-" || s === "N/A") return null;
+  s = s.replace(/\./g, ":").replace(/\s*(am|pm)$/i, " $1");
+  let m = s.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+  if (m) {
+    let hh = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    const ap = m[3]?.toUpperCase();
+    if (ap) {
+      if (ap === "PM" && hh !== 12) hh += 12;
+      if (ap === "AM" && hh === 12) hh = 0;
+      return hh * 60 + mm;
+    }
+    if (hh === 24) hh = 0;
+    if (hh >= 0 && hh < 24 && mm >= 0 && mm < 60) return hh * 60 + mm;
+    return null;
+  }
+  m = s.match(/^(\d{1,2})(?:\s*(AM|PM))$/i);
+  if (m) {
+    let hh = parseInt(m[1], 10);
+    const ap = m[2].toUpperCase();
+    if (ap === "PM" && hh !== 12) hh += 12;
+    if (ap === "AM" && hh === 12) hh = 0;
+    return hh * 60;
+  }
+  m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (m) {
+    let hh = parseInt(m[1], 10);
+    const mm = m[2] ? parseInt(m[2], 10) : 0;
+    if (hh === 24) hh = 0;
+    if (hh >= 0 && hh < 24 && mm >= 0 && mm < 60) return hh * 60 + mm;
+  }
+  return null;
+}
+
+function todayISO() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function tomorrowISO() {
+  const now = new Date();
+  now.setDate(now.getDate() + 1);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 const inputCls =
   "w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500";
@@ -100,14 +156,21 @@ export default function Journeys() {
   const load = async () => {
     setState((s) => ({ ...s, loading: true, error: "" }));
     try {
-      // Only send date if user has selected it
+      // Build params but only include keys that have meaningful values.
       const params = {
-        from: applied.from,
-        to: applied.to,
+        // trim values before sending
+        from: applied.from ? String(applied.from).trim() : undefined,
+        to: applied.to ? String(applied.to).trim() : undefined,
         page,
         limit,
       };
       if (applied.date) params.date = applied.date;
+
+      // remove undefined keys (fetchJourneys also guards but it's good to be explicit)
+      Object.keys(params).forEach((k) => {
+        if (params[k] === undefined || params[k] === "") delete params[k];
+      });
+
       const data = await fetchJourneys(params);
       setState({
         loading: false,
@@ -132,21 +195,28 @@ export default function Journeys() {
   }, [applied.from, applied.to, applied.date, page]);
 
   const onSearch = () => {
+    // Reset errors
     setValidationErrors({});
     const errors = {};
 
     // Validate From location
-    if (!inputs.from.trim()) {
+    if (!inputs.from || !inputs.from.trim()) {
       errors.from = "Please select a departure location";
     }
 
     // Validate To location
-    if (!inputs.to.trim()) {
+    if (!inputs.to || !inputs.to.trim()) {
       errors.to = "Please select a destination location";
     }
 
     // Check if From and To are different
-    if (inputs.from.trim() && inputs.to.trim() && inputs.from === inputs.to) {
+    if (
+      inputs.from &&
+      inputs.to &&
+      inputs.from.trim() &&
+      inputs.to.trim() &&
+      inputs.from.trim() === inputs.to.trim()
+    ) {
       errors.to = "Destination must be different from departure";
     }
 
@@ -174,6 +244,89 @@ export default function Journeys() {
       to: inputs.to.trim(),
       date: inputs.date,
     });
+  };
+
+  // Helper: determine whether booking should be for today or tomorrow based on departure time
+  const bookLabelAndDateForBus = (bus) => {
+    const dep =
+      bus?.schedule?.departure || bus?.departureTime || bus?.route?.departure;
+    const depMinutes = parseTimeFlexible(dep);
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // If we don't have a departure time, default to 'Book for Tomorrow'
+    if (depMinutes == null)
+      return { label: "Book for Tomorrow", date: tomorrowISO() };
+    // If current time is at least one hour before departure
+    if (depMinutes - nowMinutes >= 60) {
+      return { label: "Book for Today", date: todayISO() };
+    }
+    return { label: "Book for Tomorrow", date: tomorrowISO() };
+  };
+
+  // When clicking the Book button on a card: compute date and navigate to dashboard
+  const handleCardBook = (bus) => {
+    const { date } = bookLabelAndDateForBus(bus);
+    const from = (bus?.route?.from || bus?.from || "").trim();
+    const to = (bus?.route?.to || bus?.to || "").trim();
+    // Build query the same way SelectedBusDetails expects
+    navigate(
+      `/busBookingDashboard?busId=${encodeURIComponent(
+        bus._id
+      )}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(
+        to
+      )}&date=${encodeURIComponent(date)}`
+    );
+  };
+
+  // Book Now from filter area: validate inputs, fetch journeys and navigate to first result
+  const handleBookNow = async () => {
+    // reuse onSearch validations but do not mutate applied state here
+    const errors = {};
+    if (!inputs.from.trim()) errors.from = "Please select a departure location";
+    if (!inputs.to.trim()) errors.to = "Please select a destination location";
+    if (inputs.from.trim() && inputs.to.trim() && inputs.from === inputs.to)
+      errors.to = "Destination must be different from departure";
+    if (!inputs.date) errors.date = "Please select a date";
+    else {
+      const selectedDate = new Date(inputs.date);
+      const today = new Date(getTodayDate());
+      if (selectedDate < today) errors.date = "Cannot select past dates";
+    }
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      toast.error("Please fix the validation errors before booking");
+      return;
+    }
+
+    try {
+      const params = {
+        from: inputs.from.trim(),
+        to: inputs.to.trim(),
+        date: inputs.date,
+        page: 1,
+        limit: 1,
+      };
+      const data = await fetchJourneys(params);
+      if (!data?.items || data.items.length === 0) {
+        toast.error("No buses found for the selected route and date.");
+        return;
+      }
+      const bus = data.items[0];
+      navigate(
+        `/busBookingDashboard?busId=${encodeURIComponent(
+          bus._id
+        )}&from=${encodeURIComponent(
+          inputs.from.trim()
+        )}&to=${encodeURIComponent(inputs.to.trim())}&date=${encodeURIComponent(
+          inputs.date
+        )}`
+      );
+    } catch (err) {
+      console.error("BookNow error:", err);
+      toast.error(
+        err?.response?.data?.message || err?.message || "Failed to fetch buses"
+      );
+    }
   };
 
   const onClear = () => {
@@ -288,6 +441,15 @@ export default function Journeys() {
               >
                 <FaSearch />
                 Search
+              </button>
+
+              <button
+                onClick={handleBookNow}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white shadow hover:bg-emerald-700 active:scale-[0.99] transition"
+                title="Book Now"
+              >
+                <FaTicketAlt />
+                Book Now
               </button>
 
               <button
@@ -430,12 +592,12 @@ export default function Journeys() {
 
                     <div className="border-t border-slate-200 p-4">
                       <button
-                        onClick={() => onBook(bus)}
+                        onClick={() => handleCardBook(bus)}
                         className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 active:scale-[0.99] transition group"
                         title="Book this bus"
                       >
                         <FaTicketAlt className="text-white/90" />
-                        <span>Book</span>
+                        <span>{bookLabelAndDateForBus(bus).label}</span>
                       </button>
                     </div>
                   </motion.div>
@@ -445,7 +607,27 @@ export default function Journeys() {
 
             {state.items.length === 0 && (
               <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600 shadow">
-                No buses match your criteria. Try different filters.
+                <div className="font-semibold mb-2">
+                  No buses match your criteria.
+                </div>
+                <div className="text-sm">
+                  Try different filters. Current filters:
+                  <div className="mt-2">
+                    {applied.from && (
+                      <span className="mr-2">From: {applied.from}</span>
+                    )}
+                    {applied.to && (
+                      <span className="mr-2">To: {applied.to}</span>
+                    )}
+                    {applied.date && (
+                      <span className="mr-2">Date: {applied.date}</span>
+                    )}
+                  </div>
+                  <div className="mt-3 text-xs text-slate-500">
+                    Tip: If you set a date, only buses operating on that weekday
+                    or on specific operating dates will be shown.
+                  </div>
+                </div>
               </div>
             )}
 

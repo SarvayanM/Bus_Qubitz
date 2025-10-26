@@ -8,7 +8,7 @@ const PassengerSchema = new mongoose.Schema(
     lname: { type: String, trim: true },
     gender: { type: String, enum: ["Male", "Female", ""], default: "" },
     walletBalance: { type: Number, default: 0 }, // NEW: wallet
-    email: { type: String, trim: true }, // optional
+   
   },
   { timestamps: true }
 );

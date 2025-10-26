@@ -10,7 +10,7 @@ export async function createPassenger(payload) {
 
 export async function getPassengerByPhone(phone) {
   const { data } = await http.get(
-    `/passengers/by-phone/${encodeURIComponent(phone)}`
+    `/api/passengers/by-phone/${encodeURIComponent(phone)}`
   );
   return data?.passenger;
 }

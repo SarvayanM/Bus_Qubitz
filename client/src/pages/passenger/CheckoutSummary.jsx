@@ -17,10 +17,15 @@ import {
   CircleX,
 } from "lucide-react";
 import { createBooking } from "../../api/booking";
+import { getPassengerByPhone, createPassenger } from "../../api/passenger";
 
 // Small util to wait for toast duration before navigating
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SUCCESS_TOAST_MS = 2500; // keep in sync with <Toaster/> duration
+// Defaults to fatal (true) unless explicitly set to 'false' in env.
+const PASSENGER_CREATE_FATAL =
+  typeof process !== "undefined" &&
+  process.env?.REACT_APP_PASSENGER_CREATE_FATAL !== "false";
 
 export default function CheckoutSummary() {
   const navigate = useNavigate();
@@ -92,6 +97,9 @@ export default function CheckoutSummary() {
 
   const seatCount = seats?.length || 0;
   const seatNumbers = seats?.map((s) => s.number).sort((a, b) => a - b);
+  const prefillsFromAccount = Boolean(
+    passenger && (passenger._id || passenger.id || passenger._doc)
+  );
 
   async function handleDone() {
     if (!isStateValid) {
@@ -136,6 +144,31 @@ export default function CheckoutSummary() {
     const loadingId = toast.loading("Creating your booking…");
 
     try {
+      // Ensure passenger exists: create only at confirmation time
+      try {
+        const existing = await getPassengerByPhone(
+          payload.passenger.phone
+        ).catch(() => null);
+        if (!existing) {
+          await createPassenger({
+            phone: payload.passenger.phone,
+            fname: payload.passenger.fname || "",
+            lname: payload.passenger.lname || "",
+          });
+        }
+      } catch (err) {
+        console.error("Failed to ensure passenger record:", err);
+        if (PASSENGER_CREATE_FATAL) {
+          // Replace loading toast with error and abort booking
+          toast.error("Failed to create passenger record. Booking aborted.", {
+            id: loadingId,
+          });
+          setSubmitting(false);
+          return;
+        }
+        // non-fatal — proceed to booking when configured so
+      }
+
       const { booking } = await createBooking(payload); // normalized to throw on failure
       // success: replace loading toast with success, then wait before navigating
       toast.success("Booking confirmed! 🎉", {
@@ -329,6 +362,11 @@ export default function CheckoutSummary() {
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
                   Passenger
                 </h3>
+                {prefillsFromAccount && (
+                  <p className="text-xs text-slate-500">
+                    Prefilled from account (editable)
+                  </p>
+                )}
                 <div className="space-y-2">
                   <Item
                     label="Name"
