@@ -7,6 +7,7 @@ import Cookies from "js-cookie";
 
 // import appBg from "./assets/images/bg.jpg";
 import RoleContext from "./components/common/RoleContext";
+import { Toaster } from "react-hot-toast";
 
 import Navbar from "./components/common/Navbar";
 import PassengerNavbar from "./components/passenger/PassengerNavbar";
@@ -81,6 +82,7 @@ function AppContent() {
     <RoleContext.Provider value={roleContextValue}>
       <div className="min-h-screen flex flex-col bg-gray-50">
         {/* Global Toasts */}
+        <Toaster position="top-center" />
 
         {/* NAVBAR */}
         {!hideNavbar && (

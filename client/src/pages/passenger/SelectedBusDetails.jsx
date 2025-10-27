@@ -1,10 +1,11 @@
 // src/pages/SelectedBusDetails.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { getBusesList } from "../../api/bus";
 import { getBookingsByBusAndDate } from "../../api/booking";
 import BusLoader from "../../components/bus/BusLoader";
+import BusCard from "../../components/common/BusCard";
 import {
   MapPin,
   Calendar,
@@ -15,9 +16,8 @@ import {
   RefreshCw,
   AlertCircle,
   ChevronLeft,
-  ListChecks,
-  X,
 } from "lucide-react";
+import { showTimetableToast } from "../../components/common/TimetableToast";
 import { motion, AnimatePresence } from "framer-motion";
 
 /** Utility: yyyy-mm-dd with local timezone (Asia/Colombo) */
@@ -121,120 +121,7 @@ const durationLabel = (departure, arrival, nextDay) => {
   return `${hrs}h ${String(mins).padStart(2, "0")}m`;
 };
 
-/* ---------------------------- Timetable Toast UI --------------------------- */
-function showTimetableToast(pickups = [], onClose) {
-  const id = toast.custom(
-    (t) => (
-      <motion.div
-        initial={{ y: 12, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 12, opacity: 0 }}
-        className={`w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-xl overflow-hidden ${
-          t.visible ? "animate-in" : "animate-out"
-        }`}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-gray-200 bg-gray-50">
-          <div className="flex items-center gap-2 text-gray-800 font-semibold">
-            <ListChecks className="w-4 h-4 text-blue-700" />
-            Timetable
-          </div>
-          <button
-            onClick={() => {
-              toast.dismiss(t.id);
-              onClose?.();
-            }}
-            className="p-2 rounded-md hover:bg-gray-100"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4 text-gray-600" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 sm:p-5">
-          {/* Boarding Points (top -> bottom) */}
-          <div className="rounded-xl border border-gray-200">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-blue-700" />
-              <p className="text-sm font-semibold text-gray-800">
-                Boarding Points
-              </p>
-            </div>
-            <div className="max-h-72 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white">
-                  <tr className="text-gray-500">
-                    <th className="py-2 px-3 text-left font-medium">#</th>
-                    <th className="py-2 px-3 text-left font-medium">
-                      Location
-                    </th>
-                    <th className="py-2 px-3 text-left font-medium">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pickups.map((p, i) => (
-                    <tr
-                      key={`${p.place}-${p.time}-${i}`}
-                      className="border-t border-gray-100 hover:bg-gray-50"
-                    >
-                      <td className="py-2 px-3 text-gray-600">{i + 1}</td>
-                      <td className="py-2 px-3 text-gray-900">{p.place}</td>
-                      <td className="py-2 px-3 text-blue-700 font-medium">
-                        {p.time}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Drop-off Points (bottom -> top) */}
-          <div className="rounded-xl border border-gray-200">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-blue-700" />
-              <p className="text-sm font-semibold text-gray-800">
-                Drop-off Points
-              </p>
-            </div>
-            <div className="max-h-72 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white">
-                  <tr className="text-gray-500">
-                    <th className="py-2 px-3 text-left font-medium">#</th>
-                    <th className="py-2 px-3 text-left font-medium">
-                      Location
-                    </th>
-                    <th className="py-2 px-3 text-left font-medium">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...pickups].reverse().map((p, idx, arr) => (
-                    <tr
-                      key={`drop-${p.place}-${p.time}-${idx}`}
-                      className="border-t border-gray-100 hover:bg-gray-50"
-                    >
-                      <td className="py-2 px-3 text-gray-600">
-                        {arr.length - idx}
-                      </td>
-                      <td className="py-2 px-3 text-gray-900">{p.place}</td>
-                      <td className="py-2 px-3 text-blue-700 font-medium">
-                        {p.time}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    ),
-    { duration: 600000 } // stay until closed
-  );
-  return id;
-}
+// Timetable UI moved to shared component (showTimetableToast)
 
 /* ========================================================================== */
 /*                                 PAGE VIEW                                  */
@@ -368,7 +255,7 @@ export default function SelectedBusDetails({ userName = "" }) {
         backgroundColor: "#ffffff",
       }}
     >
-      <Toaster position="top-center" toastOptions={{ duration: 4000 }} />
+      {/* Global Toaster moved to App root */}
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
@@ -651,212 +538,11 @@ export default function SelectedBusDetails({ userName = "" }) {
         {!loading && !err && matches.length > 0 && (
           <div className="space-y-4">
             {matches.map((b) => (
-              <BusCard key={b._id} bus={b} onBook={handleBook} qDate={qDate} />
+              <BusCard key={b._id} bus={b} onBook={handleBook} date={qDate} />
             ))}
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Compact Horizontal Bus Card with Timetable shown via toast popup   */
-/* ------------------------------------------------------------------ */
-function BusCard({ bus, onBook, qDate }) {
-  const {
-    _id,
-    busNo = "N/A",
-    busName = "",
-    type = "Standard",
-    frequency = "Regular",
-    price = 0,
-    seats = 0,
-    route = {},
-    schedule = {},
-    pickups = [],
-  } = bus;
-
-  const { from = "—", to = "—" } = route;
-  const { departure = "—", arrival = "—", nextDayArrival = false } = schedule;
-
-  const [opening, setOpening] = useState(false);
-  const [availableSeats, setAvailableSeats] = useState(seats);
-  const [loading, setLoading] = useState(true);
-
-  // Fetch booking data to calculate available seats
-  useEffect(() => {
-    async function fetchAvailableSeats() {
-      if (!_id || !qDate) {
-        setAvailableSeats(seats);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const data = await getBookingsByBusAndDate(_id, qDate);
-        const bookedSeats = [
-          ...(data?.bookedByGents || []),
-          ...(data?.bookedByLadies || []),
-        ];
-        const unavailable = data?.unavailableSeats || [];
-        const totalBooked = new Set([...bookedSeats, ...unavailable]).size;
-        setAvailableSeats(Math.max(0, seats - totalBooked));
-      } catch (err) {
-        console.error("Failed to fetch available seats:", err);
-        setAvailableSeats(seats);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchAvailableSeats();
-  }, [_id, qDate, seats]);
-
-  const openTimetable = () => {
-    if (!pickups?.length) {
-      toast("No timetable available", { icon: "ℹ️" });
-      return;
-    }
-    setOpening(true);
-    showTimetableToast(pickups, () => setOpening(false));
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -1 }}
-      transition={{ duration: 0.25 }}
-      className="group rounded-xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition overflow-hidden"
-    >
-      {/* Row layout (no image as requested) */}
-      <div className="flex flex-col md:flex-row items-stretch">
-        {/* Left: Route + name */}
-        <div className="flex-1 p-4 sm:p-5">
-          {/* Route */}
-          <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-            <span>{from}</span>
-            <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span>{to}</span>
-            <span className="ml-2 text-xs text-gray-500 font-medium">
-              #{busNo}
-            </span>
-          </h3>
-
-          {/* Bus name + type/frequency */}
-          <p className="text-gray-700 mb-3 flex flex-wrap items-center gap-2">
-            <Tag className="w-4 h-4 text-gray-400" />
-            <span className="font-medium">{busName || "—"}</span>
-            <span className="text-gray-400">•</span>
-            <span className="text-sm text-blue-800/90 bg-blue-50 px-2 py-0.5 rounded">
-              {type}
-            </span>
-            <span className="text-sm text-blue-800/90 bg-blue-50 px-2 py-0.5 rounded">
-              {frequency}
-            </span>
-          </p>
-
-          {/* Timeline row (compact) */}
-          <div className="grid grid-cols-3 items-center gap-3">
-            {/* Departure */}
-            <div className="text-center rounded-lg border border-gray-200 bg-white px-3 py-2">
-              <div className="flex items-center justify-center gap-1 mb-0.5">
-                <Clock className="w-4 h-4 text-blue-700" />
-                <p className="text-[10px] font-semibold text-gray-500 tracking-wide">
-                  DEPARTURE
-                </p>
-              </div>
-              <p className="text-base font-bold">{departure}</p>
-              <p className="text-[11px] text-gray-500 mt-0.5">{qDate || "-"}</p>
-            </div>
-
-            {/* Duration (center) */}
-            <div className="text-center bg-blue-50 rounded-lg border border-blue-200 px-3 py-2">
-              <div className="flex items-center justify-center gap-1 mb-0.5">
-                <Clock className="w-4 h-4 text-blue-700" />
-                <p className="text-[10px] font-semibold text-gray-500 tracking-wide">
-                  APPROX. DURATION
-                </p>
-              </div>
-              <p className="text-base font-bold text-blue-900">
-                {durationLabel(departure, arrival, nextDayArrival)}
-              </p>
-            </div>
-
-            {/* Arrival */}
-            <div className="text-center rounded-lg border border-gray-200 bg-white px-3 py-2">
-              <div className="flex items-center justify-center gap-1 mb-0.5">
-                <Clock className="w-4 h-4 text-blue-700" />
-                <p className="text-[10px] font-semibold text-gray-500 tracking-wide">
-                  ARRIVAL
-                </p>
-              </div>
-              <p className="text-base font-bold">{arrival}</p>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                {nextDayArrival ? "Tomorrow" : "Today"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Meta + actions */}
-        <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-gray-200 p-4 sm:p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-3">
-            {loading ? (
-              <div className="flex items-center gap-2 text-gray-400">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Loading...</span>
-              </div>
-            ) : availableSeats === 0 ? (
-              <div className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg font-semibold text-sm">
-                Fully Booked
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-gray-700">
-                <Users className="w-5 h-5 text-blue-700" />
-                <span className="text-sm">Available Seats</span>
-                <span className="font-semibold">
-                  {availableSeats} / {seats}
-                </span>
-              </div>
-            )}
-            <div className="text-right">
-              <p className="text-[11px] text-gray-500 font-semibold">
-                STARTING FROM
-              </p>
-              <p className="text-xl font-extrabold text-blue-900">
-                LKR {Number(price).toFixed(2)}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              onClick={() => onBook(_id)}
-              disabled={availableSeats === 0}
-              className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 font-semibold px-4 py-2.5 rounded-lg transition ${
-                availableSeats === 0
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-900 hover:bg-blue-800 text-white"
-              }`}
-            >
-              <span>{availableSeats === 0 ? "No Seats" : "Book"}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <button
-              disabled={opening}
-              onClick={openTimetable}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-900 font-semibold px-4 py-2.5 rounded-lg transition"
-              title="View timetable"
-            >
-              <ListChecks className="w-4 h-4 text-blue-800" />
-              Timetable
-            </button>
-          </div>
-        </div>
-      </div>
-    </motion.div>
   );
 }

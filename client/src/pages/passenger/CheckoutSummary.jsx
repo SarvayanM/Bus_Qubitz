@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import {
   BusFront,
   CalendarDays,
@@ -468,14 +468,7 @@ export default function CheckoutSummary() {
         </div>
       </div>
 
-      {/* Toasts (ideally one <Toaster/> at App root; safe here too) */}
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          duration: SUCCESS_TOAST_MS,
-          style: { fontSize: 14 },
-        }}
-      />
+      {/* Global Toaster moved to App root */}
     </div>
   );
 }

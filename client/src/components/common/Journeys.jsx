@@ -16,6 +16,7 @@ import toast from "react-hot-toast";
 import { fetchJourneys } from "../../api/journeys";
 import { getBuses } from "../../api/bus";
 import { useNavigate } from "react-router-dom";
+import BusCard from "./BusCard";
 
 // Parse flexible time strings into minutes since midnight (0-1439)
 function parseTimeFlexible(t) {
@@ -347,11 +348,7 @@ export default function Journeys() {
     setApplied({ from: "", to: "", date: "" }); // show ALL again (no date filter)
   };
 
-  const onBook = (bus) => {
-    const params = new URLSearchParams();
-    if (applied.date) params.set("date", applied.date);
-    navigate(`/book/${bus._id}?${params.toString()}`);
-  };
+  // onBook removed (unused). We use BusCard's onBook callback to navigate to booking dashboard.
 
   return (
     <div className="min-h-screen">
@@ -512,99 +509,32 @@ export default function Journeys() {
         {!state.loading && !state.error && (
           <>
             <AnimatePresence mode="popLayout">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="space-y-4">
                 {state.items.map((bus) => (
-                  <motion.div
+                  <BusCard
                     key={bus._id}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="group rounded-2xl border border-slate-200 bg-white shadow hover:shadow-lg transition overflow-hidden"
-                  >
-                    <div className="p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-                          <FaBus />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-semibold text-slate-900">
-                            {bus?.busName || bus?.operatorName || "Bus"}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {bus?.plateNo || bus?.busNo || ""}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Company Information */}
-                      {bus?.companyName && (
-                        <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded-lg px-2 py-1.5">
-                          <FaBuilding className="text-slate-400" />
-                          <span className="truncate">{bus.companyName}</span>
-                        </div>
-                      )}
-
-                      <div className="mt-3 text-sm text-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <FaMapMarkerAlt className="text-slate-400" />
-                            <span className="font-medium">
-                              {bus?.route?.from || bus?.from || "—"}
-                            </span>
-                          </div>
-                          <FaArrowRight className="text-slate-300" />
-                          <div className="flex items-center gap-2">
-                            <FaMapMarkerAlt className="text-slate-400" />
-                            <span className="font-medium">
-                              {bus?.route?.to || bus?.to || "—"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <FaClock className="text-slate-400" />
-                          <span>
-                            {bus?.schedule?.departure ||
-                              bus?.departureTime ||
-                              "—"}
-                            {bus?.schedule?.arrival
-                              ? ` · Arr ${bus.schedule.arrival}`
-                              : ""}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <FaChair className="text-slate-400" />
-                          <span>
-                            {typeof bus?.seatsAvailable === "number" &&
-                            typeof bus?.seatsTotal === "number"
-                              ? `${bus.seatsAvailable}/${bus.seatsTotal} seats available`
-                              : typeof bus?.seatsAvailable === "number"
-                              ? `${bus.seatsAvailable} seats available`
-                              : `${bus?.seatsTotal ?? "—"} total seats`}
-                          </span>
-                        </div>
-
-                        {bus?.fare ? (
-                          <div className="text-slate-900 font-semibold">
-                            Rs. {Number(bus.fare).toFixed(2)}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-200 p-4">
-                      <button
-                        onClick={() => handleCardBook(bus)}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 active:scale-[0.99] transition group"
-                        title="Book this bus"
-                      >
-                        <FaTicketAlt className="text-white/90" />
-                        <span>{getCardButtonLabel(bus)}</span>
-                      </button>
-                    </div>
-                  </motion.div>
+                    bus={bus}
+                    date={isFilterApplied ? applied.date : undefined}
+                    isFiltered={isFilterApplied}
+                    onBook={(busId, date) => {
+                      const from = (bus?.route?.from || bus?.from || "").trim();
+                      const to = (bus?.route?.to || bus?.to || "").trim();
+                      const qdate =
+                        date ||
+                        (isFilterApplied
+                          ? applied.date
+                          : bookLabelAndDateForBus(bus).date);
+                      navigate(
+                        `/busBookingDashboard?busId=${encodeURIComponent(
+                          busId
+                        )}&from=${encodeURIComponent(
+                          from
+                        )}&to=${encodeURIComponent(
+                          to
+                        )}&date=${encodeURIComponent(qdate)}`
+                      );
+                    }}
+                  />
                 ))}
               </div>
             </AnimatePresence>
