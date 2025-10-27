@@ -2,14 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   FaMapMarkerAlt,
   FaCalendarAlt,
-  FaBus,
-  FaClock,
-  FaChair,
   FaSearch,
-  FaArrowRight,
-  FaTicketAlt,
   FaBroom,
-  FaBuilding,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -17,6 +11,10 @@ import { fetchJourneys } from "../../api/journeys";
 import { getBuses } from "../../api/bus";
 import { useNavigate } from "react-router-dom";
 import BusCard from "./BusCard";
+
+// -----------------------------
+// Utilities
+// -----------------------------
 
 // Parse flexible time strings into minutes since midnight (0-1439)
 function parseTimeFlexible(t) {
@@ -73,10 +71,7 @@ function tomorrowISO() {
   return `${y}-${m}-${d}`;
 }
 
-const inputCls =
-  "w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500";
-
-// Get today's date in YYYY-MM-DD format
+// Get today's date in YYYY-MM-DD format for min= attr
 const getTodayDate = () => {
   const today = new Date();
   const year = today.getFullYear();
@@ -85,22 +80,130 @@ const getTodayDate = () => {
   return `${year}-${month}-${day}`;
 };
 
+const inputCls =
+  "w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500";
+
+// -----------------------------
+// Field normalization helpers
+// -----------------------------
+
+const firstDefined = (...vals) =>
+  vals.find((v) => v !== undefined && v !== null && v !== "");
+
+const pickFrom = (obj, paths) => {
+  for (const p of paths) {
+    // support nested "a.b.c"
+    const parts = p.split(".");
+    let cur = obj;
+    let ok = true;
+    for (const part of parts) {
+      if (cur && Object.prototype.hasOwnProperty.call(cur, part)) {
+        cur = cur[part];
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && cur !== undefined && cur !== null && cur !== "") return cur;
+  }
+  return undefined;
+};
+
+/**
+ * Normalize any journey/bus record into the exact shape BusCard expects.
+ * Tries multiple common field names to avoid mismatches (type/frequency/etc).
+ */
+function normalizeJourneyToBus(j) {
+  // support when the payload nests real bus under j.bus
+  const src = j?.bus ? { ...j, ...j.bus } : j || {};
+
+  const _id = firstDefined(src._id, src.id, src.busId);
+
+  const routeFrom = pickFrom(src, ["route.from", "from", "origin", "source"]);
+  const routeTo = pickFrom(src, ["route.to", "to", "destination", "dest"]);
+
+  const departure = pickFrom(src, [
+    "schedule.departure",
+    "departure",
+    "departureTime",
+    "deptTime",
+    "time.departure",
+  ]);
+  const arrival = pickFrom(src, [
+    "schedule.arrival",
+    "arrival",
+    "arrivalTime",
+    "arrTime",
+    "time.arrival",
+  ]);
+
+  const busNo = firstDefined(src.busNo, src.number, src.busNumber, src.code);
+  const busName = firstDefined(src.busName, src.name, src.title, src.label);
+
+  const type = firstDefined(
+    src.type,
+    src.busType,
+    src.category,
+    src.class,
+    src.vehicleType
+  );
+
+  const frequency = firstDefined(
+    src.frequency,
+    src.serviceFrequency,
+    src.operationFrequency,
+    src.schedule?.frequency,
+    src.freq
+  );
+
+  const price = Number(
+    firstDefined(src.price, src.fare, src.minFare, src.startingPrice, 0)
+  );
+
+  const seatsTotal = Number(
+    firstDefined(src.seatsTotal, src.totalSeats, src.capacity, src.seats, 0)
+  );
+  const seatsAvailable = firstDefined(
+    src.seatsAvailable,
+    src.availableSeats,
+    src.vacantSeats
+  );
+
+  const pickups = firstDefined(src.pickups, src.stops, src.stopPoints, []);
+
+  return {
+    _id,
+    busNo,
+    busName,
+    type: type || "",
+    frequency: frequency || "Regular",
+    price,
+    seatsTotal,
+    seatsAvailable,
+    route: {
+      from: routeFrom || "—",
+      to: routeTo || "—",
+    },
+    schedule: {
+      departure: departure || "—",
+      arrival: arrival || "—",
+    },
+    pickups,
+  };
+}
+
+// -----------------------------
+// Component
+// -----------------------------
+
 export default function Journeys() {
   const navigate = useNavigate();
 
   // 1) Inputs the user is typing in (do NOT auto-apply)
-  const [inputs, setInputs] = useState({
-    from: "",
-    to: "",
-    date: "",
-  });
+  const [inputs, setInputs] = useState({ from: "", to: "", date: "" });
 
   // 2) Filters actually applied to the query (only set when Search clicked)
-  const [applied, setApplied] = useState({
-    from: "",
-    to: "",
-    date: "",
-  });
+  const [applied, setApplied] = useState({ from: "", to: "", date: "" });
 
   // 3) Available locations extracted from all buses
   const [locations, setLocations] = useState([]);
@@ -157,9 +260,7 @@ export default function Journeys() {
   const load = async () => {
     setState((s) => ({ ...s, loading: true, error: "" }));
     try {
-      // Build params but only include keys that have meaningful values.
       const params = {
-        // trim values before sending
         from: applied.from ? String(applied.from).trim() : undefined,
         to: applied.to ? String(applied.to).trim() : undefined,
         page,
@@ -167,7 +268,6 @@ export default function Journeys() {
       };
       if (applied.date) params.date = applied.date;
 
-      // remove undefined keys (fetchJourneys also guards but it's good to be explicit)
       Object.keys(params).forEach((k) => {
         if (params[k] === undefined || params[k] === "") delete params[k];
       });
@@ -196,21 +296,15 @@ export default function Journeys() {
   }, [applied.from, applied.to, applied.date, page]);
 
   const onSearch = () => {
-    // Reset errors
     setValidationErrors({});
     const errors = {};
 
-    // Validate From location
     if (!inputs.from || !inputs.from.trim()) {
       errors.from = "Please select a departure location";
     }
-
-    // Validate To location
     if (!inputs.to || !inputs.to.trim()) {
       errors.to = "Please select a destination location";
     }
-
-    // Check if From and To are different
     if (
       inputs.from &&
       inputs.to &&
@@ -220,12 +314,9 @@ export default function Journeys() {
     ) {
       errors.to = "Destination must be different from departure";
     }
-
-    // Date is required for filtering
     if (!inputs.date) {
       errors.date = "Please select a date";
     } else {
-      // Validate Date (must be today or future)
       const selectedDate = new Date(inputs.date);
       const today = new Date(getTodayDate());
       if (selectedDate < today) {
@@ -247,17 +338,15 @@ export default function Journeys() {
     });
   };
 
-  // Helper: determine whether booking should be for today or tomorrow based on departure time
-  const bookLabelAndDateForBus = (bus) => {
-    const dep =
-      bus?.schedule?.departure || bus?.departureTime || bus?.route?.departure;
+  // Helper: determine whether booking should be for today or tomorrow
+  const bookLabelAndDateForBus = (rawBus) => {
+    const bus = normalizeJourneyToBus(rawBus);
+    const dep = bus?.schedule?.departure;
     const depMinutes = parseTimeFlexible(dep);
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    // If we don't have a departure time, default to 'Book for Tomorrow'
     if (depMinutes == null)
       return { label: "Book for Tomorrow", date: tomorrowISO() };
-    // If current time is at least one hour before departure
     if (depMinutes - nowMinutes >= 60) {
       return { label: "Book for Today", date: todayISO() };
     }
@@ -268,87 +357,17 @@ export default function Journeys() {
     applied?.from && applied?.to && applied?.date
   );
 
-  const getCardButtonLabel = (bus) => {
+  const getCardButtonLabel = (rawBus) => {
     if (isFilterApplied) return "Book Now";
-    return bookLabelAndDateForBus(bus).label;
-  };
-
-  // When clicking the Book button on a card: compute date and navigate to dashboard
-  const handleCardBook = (bus) => {
-    const date = isFilterApplied
-      ? applied.date
-      : bookLabelAndDateForBus(bus).date;
-    const from = (bus?.route?.from || bus?.from || "").trim();
-    const to = (bus?.route?.to || bus?.to || "").trim();
-    // Build query the same way SelectedBusDetails expects
-    navigate(
-      `/busBookingDashboard?busId=${encodeURIComponent(
-        bus._id
-      )}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(
-        to
-      )}&date=${encodeURIComponent(date)}`
-    );
-  };
-
-  // Book Now from filter area: validate inputs, fetch journeys and navigate to first result
-  const handleBookNow = async () => {
-    // reuse onSearch validations but do not mutate applied state here
-    const errors = {};
-    if (!inputs.from.trim()) errors.from = "Please select a departure location";
-    if (!inputs.to.trim()) errors.to = "Please select a destination location";
-    if (inputs.from.trim() && inputs.to.trim() && inputs.from === inputs.to)
-      errors.to = "Destination must be different from departure";
-    if (!inputs.date) errors.date = "Please select a date";
-    else {
-      const selectedDate = new Date(inputs.date);
-      const today = new Date(getTodayDate());
-      if (selectedDate < today) errors.date = "Cannot select past dates";
-    }
-    if (Object.keys(errors).length > 0) {
-      setValidationErrors(errors);
-      toast.error("Please fix the validation errors before booking");
-      return;
-    }
-
-    try {
-      const params = {
-        from: inputs.from.trim(),
-        to: inputs.to.trim(),
-        date: inputs.date,
-        page: 1,
-        limit: 1,
-      };
-      const data = await fetchJourneys(params);
-      if (!data?.items || data.items.length === 0) {
-        toast.error("No buses found for the selected route and date.");
-        return;
-      }
-      const bus = data.items[0];
-      navigate(
-        `/busBookingDashboard?busId=${encodeURIComponent(
-          bus._id
-        )}&from=${encodeURIComponent(
-          inputs.from.trim()
-        )}&to=${encodeURIComponent(inputs.to.trim())}&date=${encodeURIComponent(
-          inputs.date
-        )}`
-      );
-    } catch (err) {
-      console.error("BookNow error:", err);
-      toast.error(
-        err?.response?.data?.message || err?.message || "Failed to fetch buses"
-      );
-    }
+    return bookLabelAndDateForBus(rawBus).label;
   };
 
   const onClear = () => {
     setInputs({ from: "", to: "", date: "" });
     setValidationErrors({});
     setPage(1);
-    setApplied({ from: "", to: "", date: "" }); // show ALL again (no date filter)
+    setApplied({ from: "", to: "", date: "" });
   };
-
-  // onBook removed (unused). We use BusCard's onBook callback to navigate to booking dashboard.
 
   return (
     <div className="min-h-screen">
@@ -402,6 +421,7 @@ export default function Journeys() {
                   </p>
                 )}
               </div>
+
               <div className="relative md:col-span-1">
                 <FaMapMarkerAlt className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" />
                 <select
@@ -424,6 +444,7 @@ export default function Journeys() {
                   </p>
                 )}
               </div>
+
               <div className="relative md:col-span-1">
                 <FaCalendarAlt className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" />
                 <input
@@ -451,8 +472,6 @@ export default function Journeys() {
                 Search
               </button>
 
-              {/* Book Now button removed from filter area by default per UX request */}
-
               <button
                 onClick={onClear}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 shadow-sm hover:bg-slate-50 active:scale-[0.99] transition"
@@ -463,7 +482,6 @@ export default function Journeys() {
               </button>
             </div>
 
-            {/* Applied pill line */}
             {(applied.from || applied.to || applied.date) && (
               <div className="mt-3 text-sm text-slate-600">
                 Applied:
@@ -500,6 +518,7 @@ export default function Journeys() {
             ))}
           </div>
         )}
+
         {!state.loading && state.error && (
           <div className="rounded-2xl border border-rose-200 bg-white p-6 text-rose-700 shadow">
             {state.error}
@@ -510,32 +529,35 @@ export default function Journeys() {
           <>
             <AnimatePresence mode="popLayout">
               <div className="space-y-4">
-                {state.items.map((bus) => (
-                  <BusCard
-                    key={bus._id}
-                    bus={bus}
-                    date={isFilterApplied ? applied.date : undefined}
-                    isFiltered={isFilterApplied}
-                    onBook={(busId, date) => {
-                      const from = (bus?.route?.from || bus?.from || "").trim();
-                      const to = (bus?.route?.to || bus?.to || "").trim();
-                      const qdate =
-                        date ||
-                        (isFilterApplied
-                          ? applied.date
-                          : bookLabelAndDateForBus(bus).date);
-                      navigate(
-                        `/busBookingDashboard?busId=${encodeURIComponent(
-                          busId
-                        )}&from=${encodeURIComponent(
-                          from
-                        )}&to=${encodeURIComponent(
-                          to
-                        )}&date=${encodeURIComponent(qdate)}`
-                      );
-                    }}
-                  />
-                ))}
+                {state.items.map((raw, idx) => {
+                  const bus = normalizeJourneyToBus(raw); // <-- ensure BusCard gets exactly what it expects
+                  return (
+                    <BusCard
+                      key={bus._id || raw._id || raw.id || idx}
+                      bus={bus}
+                      date={isFilterApplied ? applied.date : undefined}
+                      isFiltered={isFilterApplied}
+                      onBook={(busId, dateFromCard) => {
+                        const from = (bus?.route?.from || "").trim();
+                        const to = (bus?.route?.to || "").trim();
+                        const qdate =
+                          dateFromCard ||
+                          (isFilterApplied
+                            ? applied.date
+                            : bookLabelAndDateForBus(raw).date);
+                        navigate(
+                          `/busBookingDashboard?busId=${encodeURIComponent(
+                            busId
+                          )}&from=${encodeURIComponent(
+                            from
+                          )}&to=${encodeURIComponent(
+                            to
+                          )}&date=${encodeURIComponent(qdate)}`
+                        );
+                      }}
+                    />
+                  );
+                })}
               </div>
             </AnimatePresence>
 

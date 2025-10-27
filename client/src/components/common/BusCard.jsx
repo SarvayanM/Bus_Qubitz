@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
   Clock,
   Users,
-  Tag,
   RefreshCw,
   ListChecks,
+  Bus,
 } from "lucide-react";
 import { showTimetableToast } from "./TimetableToast";
 import { getBookingsByBusAndDate } from "../../api/booking";
@@ -42,96 +43,67 @@ function parseTimeFlexible(t) {
   }
   m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
   if (m) {
-    let hh = parseInt(m[1], 10);
-    const mm = m[2] ? parseInt(m[2], 10) : 0;
-    if (hh === 24) hh = 0;
+    const hh = parseInt(m[1], 10);
+    const mm = parseInt(m[2] || "0", 10);
     if (hh >= 0 && hh < 24 && mm >= 0 && mm < 60) return hh * 60 + mm;
   }
   return null;
 }
 
-const durationLabel = (departure, arrival, nextDay) => {
-  const d = parseTimeFlexible(departure);
-  const a = parseTimeFlexible(arrival);
-  if (d == null || a == null) return "—";
-  let diff = a - d;
-  if (diff < 0 || nextDay) diff += 24 * 60;
-  const hrs = Math.floor(diff / 60);
-  const mins = diff % 60;
-  return `${hrs}h ${String(mins).padStart(2, "0")}m`;
-};
-
-function todayISO() {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function durationLabel(departure, arrival, nextDay) {
+  const dep = parseTimeFlexible(departure);
+  const arr = parseTimeFlexible(arrival);
+  if (dep == null || arr == null) return "—";
+  let mins = arr - dep;
+  if (mins < 0 || nextDay) mins += 24 * 60;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m} Min`;
+  if (m === 0) return `${h} Hr`;
+  return `${h} Hr ${m} Min`;
 }
 
-function tomorrowISO() {
-  const now = new Date();
-  now.setDate(now.getDate() + 1);
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function formatDateISO(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-// timetable toast moved to shared component: ./TimetableToast
-
-export default function BusCard({ bus, date, onBook, isFiltered = false }) {
+export default function BusCard({
+  bus = {},
+  date = null,
+  onBook,
+  isFiltered = false,
+}) {
   const {
     _id,
-    busNo = "N/A",
-    busName = "",
-    type = "Standard",
+    busNo,
+    busName,
+    type = "",
     frequency = "Regular",
     price = 0,
-    // different APIs may return seats as `seats`, `seatsTotal` or provide `seatsAvailable`
-    seats: seatsRaw = undefined,
-    seatsTotal: seatsTotalRaw = undefined,
-    seatsAvailable: seatsAvailableRaw = undefined,
+    seats: seatsRaw,
+    seatsTotal: seatsTotalRaw,
+    seatsAvailable: seatsAvailableRaw,
     route = {},
     schedule = {},
     pickups = [],
   } = bus || {};
 
   const seatsTotal = Number(seatsTotalRaw ?? seatsRaw ?? 0);
-
   const { from = "—", to = "—" } = route;
   const { departure = "—", arrival = "—" } = schedule || {};
 
-  const [opening, setOpening] = useState(false);
-  // seed availability from server-provided seatsAvailable when present to avoid flicker
+  const availDate = formatDateISO(date) || formatDateISO(new Date());
+
   const [availableSeats, setAvailableSeats] = useState(
     typeof seatsAvailableRaw === "number" ? seatsAvailableRaw : seatsTotal
   );
-  const [loading, setLoading] = useState(true);
-
-  // Compute which date to check for availability
-  const today = todayISO();
-  const tomorrow = tomorrowISO();
-
-  // Determine label & date: always return an object { label, date }
-  const computeLabel = () => {
-    if (isFiltered) return { label: "Book Now", date: date || today };
-    const depMinutes = parseTimeFlexible(
-      departure || schedule?.departure || bus?.departureTime
-    );
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    if (depMinutes == null)
-      return { label: "Book for Tomorrow", date: tomorrow };
-    if (depMinutes - nowMinutes >= 60)
-      return { label: "Book for Today", date: today };
-    return { label: "Book for Tomorrow", date: tomorrow };
-  };
-
-  const labelInfo = computeLabel();
-  const label = labelInfo.label;
-  const availDate = labelInfo.date;
+  const [loading, setLoading] = useState(false);
+  const [opening, setOpening] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -164,7 +136,7 @@ export default function BusCard({ bus, date, onBook, isFiltered = false }) {
   }, [_id, availDate, seatsTotal]);
 
   const openTimetable = () => {
-    if (!pickups?.length) {
+    if (!pickups || pickups.length === 0) {
       toast("No timetable available", { icon: "ℹ️" });
       return;
     }
@@ -179,121 +151,207 @@ export default function BusCard({ bus, date, onBook, isFiltered = false }) {
     departureMinutes != null &&
     arrivalMinutes < departureMinutes;
 
+  const label = isFiltered ? "View & Book" : "Book Now";
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -1 }}
-      transition={{ duration: 0.25 }}
-      className="group rounded-xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition overflow-hidden"
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.2 }}
+      className="group rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition cursor-default"
     >
       <div className="flex flex-col md:flex-row items-stretch">
-        <div className="flex-1 p-4 sm:p-5">
-          <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-            <span>{from}</span>
-            <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span>{to}</span>
-            <span className="ml-2 text-xs text-gray-500 font-medium">
-              #{busNo}
-            </span>
+        {/* Left: route & times */}
+        <div className="flex-1 p-5 md:p-6">
+          <h3 className="text-[18px] md:text-lg font-semibold text-slate-900 mb-1 flex items-center gap-2">
+            <span className="truncate">{from}</span>
+            <ArrowRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <span className="truncate">{to}</span>
+            {busNo && (
+              <span className="ml-2 text-[11px] leading-5 text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">
+                #{busNo}
+              </span>
+            )}
           </h3>
 
-          <p className="text-gray-700 mb-3 flex flex-wrap items-center gap-2">
-            <Tag className="w-4 h-4 text-gray-400" />
-            <span className="font-medium">{busName || "—"}</span>
-            <span className="text-gray-400">•</span>
-            <span className="text-sm text-blue-800/90 bg-blue-50 px-2 py-0.5 rounded">
+          {/* Bus meta row with icon + colored chips */}
+          <p className="text-slate-700 mb-3 flex flex-wrap items-center gap-2">
+            <Bus className="w-4 h-4 text-blue-900" />
+            <span className="font-medium text-slate-900 text-[12px] bg-amber-50 border border-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+              {busName || "—"}
+            </span>
+            <span className="text-[12px] bg-violet-50 border border-violet-200 text-violet-900 px-2 py-0.5 rounded-full">
               {type}
             </span>
-            <span className="text-sm text-blue-800/90 bg-blue-50 px-2 py-0.5 rounded">
+            <span className="text-[12px] bg-emerald-50 border border-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">
               {frequency}
             </span>
           </p>
 
-          <div className="grid grid-cols-3 items-center gap-3">
-            <div className="text-center rounded-lg border border-gray-200 bg-white px-3 py-2">
+          <div className="grid grid-cols-3 gap-3 md:gap-4">
+            {/* Departure (no date shown) */}
+            <div className="text-center rounded-xl border border-slate-200 bg-white px-3 py-2.5">
               <div className="flex items-center justify-center gap-1 mb-0.5">
-                <Clock className="w-4 h-4 text-blue-700" />
-                <p className="text-[10px] font-semibold text-gray-500 tracking-wide">
+                <Clock className="w-4 h-4 text-blue-900" />
+                <p className="text-[10px] font-semibold text-slate-500 tracking-wide">
                   DEPARTURE
                 </p>
               </div>
-              <p className="text-base font-bold">{departure}</p>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                {availDate || "-"}
+              <p className="text-base md:text-lg font-bold text-slate-900">
+                {departure}
               </p>
+              {/* From / To below the time */}
+              <div className="mt-1 text-[11px] text-slate-600">
+                <div>
+                  <span className="font-medium">From:</span> {from}
+                </div>
+              </div>
             </div>
 
-            <div className="text-center bg-blue-50 rounded-lg border border-blue-200 px-3 py-2">
-              <div className="flex items-center justify-center gap-1 mb-0.5">
-                <Clock className="w-4 h-4 text-blue-700" />
-                <p className="text-[10px] font-semibold text-gray-500 tracking-wide">
-                  APPROX. DURATION
+            {/* Duration with lighter continuous arrow line */}
+            <div className="text-center rounded-xl px-3 py-2.5">
+              <div className="flex items-center justify-center gap-1 mb-1">
+                <Clock className="w-4 h-4 text-blue-900" />
+                <p className="text-[10px] font-semibold text-slate-700 tracking-wide">
+                  DURATION (APPROXIMATE)
                 </p>
               </div>
-              <p className="text-base font-bold text-blue-900">
-                {durationLabel(departure, arrival, nextDayArrival)}
+
+              {/* Arrow line with duration text centered and clearly visible */}
+              <div className="relative w-full">
+                <svg
+                  className="w-full h-6 text-slate-300"
+                  viewBox="0 0 100 6"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <defs>
+                    <marker
+                      id="arrowhead"
+                      markerWidth="6"
+                      markerHeight="6"
+                      refX="5"
+                      refY="3"
+                      orient="auto"
+                    >
+                      <polygon
+                        points="0 0, 6 3, 0 6"
+                        fill="currentColor"
+                        opacity="0.9"
+                      ></polygon>
+                    </marker>
+                  </defs>
+                  <line
+                    x1="0"
+                    y1="3"
+                    x2="98"
+                    y2="3"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    markerEnd="url(#arrowhead)"
+                    opacity="0.9"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                  <span className="text-sm md:text-base font-extrabold text-blue-900 px-1 rounded bg-white/85">
+                    {durationLabel(departure, arrival, nextDayArrival)}
+                  </span>
+                </div>
+              </div>
+
+              {/* From → To under the arrow */}
+              <p className="text-[11px] text-slate-700 mt-1">
+                {from} <span className="text-slate-400">→</span> {to}
               </p>
             </div>
 
-            <div
-              className={`text-center rounded-lg border border-gray-200 px-3 py-2 ${
-                nextDayArrival ? "bg-red-50" : "bg-white"
-              }`}
-            >
-              <div className="flex items-center justify-center gap-1 mb-0.5">
-                <Clock className="w-4 h-4 text-blue-700" />
-                <p className="text-[10px] font-semibold text-gray-500 tracking-wide">
-                  ARRIVAL
-                </p>
-              </div>
-              <p className="text-base font-bold">{arrival}</p>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                {nextDayArrival ? "Midnight journey" : "Same day"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-gray-200 p-4 sm:p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-3">
-            {loading ? (
-              <div className="flex items-center gap-2 text-gray-400">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Loading...</span>
-              </div>
-            ) : availableSeats === 0 ? (
-              <div className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg font-semibold text-sm">
-                Fully Booked
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-gray-700">
-                <Users className="w-5 h-5 text-blue-700" />
-                <span className="text-sm">Available Seats</span>
-                <span className="font-semibold">
-                  {availableSeats} / {seatsTotal}
+            {/* Arrival with neutral indicator */}
+            <div className="text-center rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+              <div className="flex items-center justify-center gap-2 mb-0.5">
+                <div className="flex items-center gap-1">
+                  <Clock className="w-4 h-4 text-blue-900" />
+                  <p className="text-[10px] font-semibold text-slate-500 tracking-wide">
+                    ARRIVAL
+                  </p>
+                </div>
+                <span
+                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${
+                    nextDayArrival
+                      ? "bg-slate-50 text-slate-700 border-slate-200"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  }`}
+                >
+                  {nextDayArrival ? "Next day" : "Same day"}
                 </span>
               </div>
-            )}
-            <div className="text-right">
-              <p className="text-[11px] text-gray-500 font-semibold">
-                STARTING FROM
+              <p className="text-base md:text-lg font-bold text-slate-900">
+                {arrival}
               </p>
-              <p className="text-xl font-extrabold text-blue-900">
-                LKR {Number(price).toFixed(2)}
-              </p>
+              {/* From / To below the time */}
+              <div className="mt-1 text-[11px] text-slate-600">
+                <div>
+                  <span className="font-medium">To:</span> {to}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2">
+          {nextDayArrival && (
+            <div className="mt-3 rounded-md border-l-4 border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-sm text-slate-700 font-medium">
+                Midnight Journey: This trip starts at night and ends the next
+                day. Please plan your travel accordingly.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Right: price & actions */}
+        <div className="w-full md:w-96 border-t md:border-t-0 md:border-l border-slate-200 p-6 flex flex-col items-center justify-center text-center gap-4">
+          {loading ? (
+            <div className="flex items-center gap-2 text-slate-400">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              <span className="text-sm">Checking seats...</span>
+            </div>
+          ) : availableSeats === 0 ? (
+            <div className="bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg font-semibold text-sm">
+              Fully Booked
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Users className="w-5 h-5 text-blue-900" />
+                <div className="text-sm">Available Seats</div>
+                <div className="font-semibold text-emerald-700 text-lg">
+                  {availableSeats}
+                </div>
+                <div className="text-slate-400">/</div>
+                <div className="font-semibold text-slate-900">{seatsTotal}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="leading-tight">
+            <p className="text-2xl md:text-3xl font-extrabold text-blue-900">
+              LKR {Number(price).toFixed(2)}
+            </p>
+          </div>
+
+          <div className="flex gap-2.5 w-full justify-center">
             <button
               onClick={() => onBook && onBook(_id, availDate)}
               disabled={availableSeats === 0}
-              className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 font-semibold px-4 py-2.5 rounded-lg transition ${
+              className={`inline-flex items-center justify-center gap-2 font-semibold px-5 py-3 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-blue-200 hover:shadow-sm ${
                 availableSeats === 0
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-900 hover:bg-blue-800 text-white"
+                  ? "bg-slate-200 text-slate-500 cursor-not-allowed w-full"
+                  : "bg-blue-900 hover:bg-blue-800 text-white shadow-sm w-full md:w-auto cursor-pointer"
               }`}
+              title={
+                availableSeats === 0
+                  ? "No seats available"
+                  : "Proceed to booking"
+              }
             >
               <span>{availableSeats === 0 ? "No Seats" : label}</span>
               <ArrowRight className="w-4 h-4" />
@@ -302,10 +360,14 @@ export default function BusCard({ bus, date, onBook, isFiltered = false }) {
             <button
               disabled={opening}
               onClick={openTimetable}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-900 font-semibold px-4 py-2.5 rounded-lg transition"
+              className={`inline-flex items-center justify-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 font-semibold px-5 py-3 rounded-lg transition w-full md:w-auto ${
+                opening
+                  ? "cursor-wait opacity-70"
+                  : "cursor-pointer hover:shadow-sm"
+              }`}
               title="View timetable"
             >
-              <ListChecks className="w-4 h-4 text-blue-800" />
+              <ListChecks className="w-4 h-4 text-blue-900" />
               Timetable
             </button>
           </div>

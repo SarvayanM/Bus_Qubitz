@@ -34,7 +34,7 @@ export default function Navbar() {
   const navItems = [
     { path: "/", label: "Home", icon: <FaHome className="text-lg" /> },
     {
-      path: "/journeys",
+      path: "/selectedBusDetails",
       label: "Journeys",
       icon: <FaInfoCircle className="text-lg" />,
     },

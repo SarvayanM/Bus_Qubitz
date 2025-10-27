@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getBusesList } from "../../api/bus";
 import { getBookingsByBusAndDate } from "../../api/booking";
+import { fetchJourneys } from "../../api/journeys"; // <-- NEW: default/all journeys
 import BusLoader from "../../components/bus/BusLoader";
 import BusCard from "../../components/common/BusCard";
 import {
@@ -17,7 +18,7 @@ import {
   AlertCircle,
   ChevronLeft,
 } from "lucide-react";
-import { showTimetableToast } from "../../components/common/TimetableToast";
+
 import { motion, AnimatePresence } from "framer-motion";
 
 /** Utility: yyyy-mm-dd with local timezone (Asia/Colombo) */
@@ -121,6 +122,88 @@ const durationLabel = (departure, arrival, nextDay) => {
   return `${hrs}h ${String(mins).padStart(2, "0")}m`;
 };
 
+// ---- Normalization helpers (so BusCard always receives expected shape)
+const firstDefined = (...vals) =>
+  vals.find((v) => v !== undefined && v !== null && v !== "");
+const pickFrom = (obj, paths) => {
+  for (const p of paths) {
+    const parts = p.split(".");
+    let cur = obj;
+    let ok = true;
+    for (const part of parts) {
+      if (cur && Object.prototype.hasOwnProperty.call(cur, part)) {
+        cur = cur[part];
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && cur !== undefined && cur !== null && cur !== "") return cur;
+  }
+  return undefined;
+};
+function normalizeJourneyToBus(j) {
+  const src = j?.bus ? { ...j, ...j.bus } : j || {};
+  const _id = firstDefined(src._id, src.id, src.busId);
+  const routeFrom = pickFrom(src, ["route.from", "from", "origin", "source"]);
+  const routeTo = pickFrom(src, ["route.to", "to", "destination", "dest"]);
+  const departure = pickFrom(src, [
+    "schedule.departure",
+    "departure",
+    "departureTime",
+    "deptTime",
+    "time.departure",
+  ]);
+  const arrival = pickFrom(src, [
+    "schedule.arrival",
+    "arrival",
+    "arrivalTime",
+    "arrTime",
+    "time.arrival",
+  ]);
+  const busNo = firstDefined(src.busNo, src.number, src.busNumber, src.code);
+  const busName = firstDefined(src.busName, src.name, src.title, src.label);
+  const type = firstDefined(
+    src.type,
+    src.busType,
+    src.category,
+    src.class,
+    src.vehicleType
+  );
+  const frequency = firstDefined(
+    src.frequency,
+    src.serviceFrequency,
+    src.operationFrequency,
+    src.schedule?.frequency,
+    src.freq
+  );
+  const price = Number(
+    firstDefined(src.price, src.fare, src.minFare, src.startingPrice, 0)
+  );
+  const seatsTotal = Number(
+    firstDefined(src.seatsTotal, src.totalSeats, src.capacity, src.seats, 0)
+  );
+  const seatsAvailable = firstDefined(
+    src.seatsAvailable,
+    src.availableSeats,
+    src.vacantSeats
+  );
+  const pickups = firstDefined(src.pickups, src.stops, src.stopPoints, []);
+  return {
+    _id,
+    busNo,
+    busName,
+    type: type || "",
+    frequency: frequency || "Regular",
+    price,
+    seatsTotal,
+    seatsAvailable,
+    route: { from: routeFrom || "—", to: routeTo || "—" },
+    schedule: { departure: departure || "—", arrival: arrival || "—" },
+    pickups,
+  };
+}
+
 // Timetable UI moved to shared component (showTimetableToast)
 
 /* ========================================================================== */
@@ -146,6 +229,17 @@ export default function SelectedBusDetails({ userName = "" }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [buses, setBuses] = useState([]);
+
+  // ---- NEW: default (unfiltered) journeys state
+  const [defState, setDefState] = useState({
+    loading: false,
+    error: "",
+    items: [],
+    total: 0,
+  });
+  const [defPage, setDefPage] = useState(1);
+  const [defLimit] = useState(8);
+  const hasFilters = !!(qFrom && qTo && qDate);
 
   // Sync form fields with URL params when they change
   useEffect(() => {
@@ -182,6 +276,36 @@ export default function SelectedBusDetails({ userName = "" }) {
       mounted = false;
     };
   }, []);
+
+  // NEW: load default journeys (no filters)
+  useEffect(() => {
+    if (hasFilters) return; // filtered mode uses your existing flow
+    let mounted = true;
+    (async () => {
+      try {
+        setDefState((s) => ({ ...s, loading: true, error: "" }));
+        const data = await fetchJourneys({ page: defPage, limit: defLimit });
+        if (!mounted) return;
+        setDefState({
+          loading: false,
+          error: "",
+          items: Array.isArray(data?.items) ? data.items : [],
+          total: Number(data?.total || 0),
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setDefState({
+          loading: false,
+          error: e?.response?.data?.message || e?.message || "Failed to load",
+          items: [],
+          total: 0,
+        });
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [hasFilters, defPage, defLimit]);
 
   const locations = useMemo(() => {
     const set = new Set();
@@ -248,264 +372,240 @@ export default function SelectedBusDetails({ userName = "" }) {
     );
   };
 
+  // NEW: booking handler for default list (where date may be undefined)
+  const handleDefaultBook = (busObj) => {
+    const bus = normalizeJourneyToBus(busObj);
+    const dateToUse = qDate || todayISO();
+    navigate(
+      `/busBookingDashboard?busId=${encodeURIComponent(
+        bus._id
+      )}&from=${encodeURIComponent(bus.route.from)}&to=${encodeURIComponent(
+        bus.route.to
+      )}&date=${encodeURIComponent(dateToUse)}`
+    );
+  };
+
+  // NEW: totals for default pagination
+  const defTotalPages = useMemo(
+    () => Math.max(1, Math.ceil((defState.total || 0) / defLimit)),
+    [defState.total, defLimit]
+  );
+
   return (
-    <div
-      className="min-h-screen text-gray-900 py-10 pt-24"
-      style={{
-        backgroundColor: "#ffffff",
-      }}
-    >
+    <div className="min-h-screen text-gray-900 py-10 pt-24">
       {/* Global Toaster moved to App root */}
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors mb-3">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 text-sm font-medium hover:underline"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Back to search
-            </Link>
-          </div>
-          <form
-            onSubmit={handleSearch}
-            className="w-full max-w-4xl bg-white/95 backdrop-blur-xl border border-white/30 rounded-2xl shadow-2xl p-6 sm:p-8 text-left transform hover:scale-[1.01] transition-all duration-500 animate-fade-in-up"
-            style={{ animationDelay: "0.3s" }}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-              {/* From */}
-              <div className="flex flex-col">
-                <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4 text-blue-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                  From
-                </label>
-                <select
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="h-12 rounded-xl border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all duration-200 bg-white shadow-sm hover:shadow-md"
-                >
-                  <option value="">Select origin</option>
-                  {locations.map((loc) => (
-                    <option key={`from-${loc}`} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {/* Main Search Form */}
+          <div className="w-full max-w-6xl mx-auto bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">
+              Find Your Perfect Journey
+            </h2>
+            <p className="text-gray-600 text-center mb-6">
+              Search and book bus tickets across thousands of routes
+            </p>
 
-              {/* To */}
-              <div className="flex flex-col">
-                <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4 text-blue-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* From */}
+                <div className="flex flex-col">
+                  <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-blue-900" />
+                    From
+                  </label>
+                  <select
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="h-12 rounded-lg border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent transition-all duration-200 bg-white shadow-sm hover:shadow"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
-                    />
-                  </svg>
-                  To
-                </label>
-                <select
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="h-12 rounded-xl border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all duration-200 bg-white shadow-sm hover:shadow-md"
-                >
-                  <option value="">Select destination</option>
-                  {locations.map((loc) => (
-                    <option
-                      key={`to-${loc}`}
-                      value={loc}
-                      disabled={loc === from}
-                    >
-                      {loc}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                    <option value="">Departure city</option>
+                    {locations.map((loc) => (
+                      <option key={`from-${loc}`} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              {/* Date */}
-              <div className="flex flex-col">
-                <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4 text-blue-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                {/* To */}
+                <div className="flex flex-col">
+                  <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-blue-900" />
+                    To
+                  </label>
+                  <select
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="h-12 rounded-lg border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent transition-all duration-200 bg-white shadow-sm hover:shadow"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={date}
-                  min={todayISO()}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="h-12 rounded-xl border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all duration-200 bg-white shadow-sm hover:shadow-md [color-scheme:light]"
-                />
-              </div>
+                    <option value="">Arrival city</option>
+                    {locations.map((loc) => (
+                      <option
+                        key={`to-${loc}`}
+                        value={loc}
+                        disabled={loc === from}
+                      >
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              {/* Submit */}
-              <div className="flex md:justify-end">
-                <button
-                  type="submit"
-                  className="w-full md:w-auto bg-blue-900 hover:bg-blue-1000 text-white font-semibold h-12 px-8 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2 group"
-                >
-                  <svg
-                    className="w-5 h-5 group-hover:scale-110 transition-transform"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                  Search Buses {userName && `, ${userName}`}!
-                </button>
-              </div>
-            </div>
-
-            {formError && (
-              <div className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 animate-shake flex items-center gap-2">
-                <svg
-                  className="w-4 h-4"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                    clipRule="evenodd"
+                {/* Date */}
+                <div className="flex flex-col">
+                  <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-900" />
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={date}
+                    min={todayISO()}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="h-12 rounded-lg border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent transition-all duration-200 bg-white shadow-sm hover:shadow [color-scheme:light]"
+                    placeholder="mm/dd/yyyy"
                   />
-                </svg>
-                {formError}
-              </div>
-            )}
-          </form>
+                </div>
 
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-5">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-blue-700">
-              Available Buses
-            </span>
-          </h1>
+                {/* Submit */}
+                <div className="flex md:justify-end pt-6">
+                  <button
+                    type="submit"
+                    className="w-full md:w-auto bg-blue-900 hover:bg-blue-800 text-white font-semibold h-12 px-8 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2 group"
+                  >
+                    <svg
+                      className="w-5 h-5 group-hover:scale-110 transition-transform"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      />
+                    </svg>
+                    Search Buses
+                  </button>
+                </div>
+              </div>
+
+              {formError && (
+                <div className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 animate-shake flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  {formError}
+                </div>
+              )}
+            </form>
+          </div>
 
           {/* Search Summary */}
-          <div className="flex flex-wrap justify-center gap-3">
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 rounded-md bg-blue-50">
-                  <MapPin className="w-4 h-4 text-blue-700" />
+          <div className="flex flex-wrap justify-center gap-4 mb-8">
+            <div className="rounded-xl border border-gray-200 bg-white px-6 py-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="p-2 rounded-lg bg-blue-50">
+                  <MapPin className="w-5 h-5 text-blue-900" />
                 </span>
                 <div className="text-left">
-                  <p className="text-[11px] text-gray-500 font-medium leading-none">
+                  <p className="text-xs text-gray-500 font-medium leading-none mb-1">
                     From
                   </p>
-                  <p className="text-sm font-semibold">{qFrom || "-"}</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {qFrom || "-"}
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 rounded-md bg-blue-50">
-                  <MapPin className="w-4 h-4 text-blue-700" />
+            <div className="rounded-xl border border-gray-200 bg-white px-6 py-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="p-2 rounded-lg bg-blue-50">
+                  <MapPin className="w-5 h-5 text-blue-900" />
                 </span>
                 <div className="text-left">
-                  <p className="text-[11px] text-gray-500 font-medium leading-none">
+                  <p className="text-xs text-gray-500 font-medium leading-none mb-1">
                     To
                   </p>
-                  <p className="text-sm font-semibold">{qTo || "-"}</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {qTo || "-"}
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 rounded-md bg-blue-50">
-                  <Calendar className="w-4 h-4 text-blue-700" />
+            <div className="rounded-xl border border-gray-200 bg-white px-6 py-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="p-2 rounded-lg bg-blue-50">
+                  <Calendar className="w-5 h-5 text-blue-900" />
                 </span>
                 <div className="text-left">
-                  <p className="text-[11px] text-gray-500 font-medium leading-none">
+                  <p className="text-xs text-gray-500 font-medium leading-none mb-1">
                     Travel Date
                   </p>
-                  <p className="text-sm font-semibold">{formatDate(qDate)}</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {formatDate(qDate)}
+                  </p>
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="border-t border-gray-200 pt-3">
+            <p className="text-gray-600">
+              Showing results for your selected route and date
+            </p>
           </div>
         </div>
 
-        {/* Count */}
-        {!loading && !err && matches.length > 0 && (
-          <div className="mb-5 text-center">
-            <p className="text-sm text-gray-600">
+        {/* Count (filtered mode) */}
+        {!loading && !err && hasFilters && matches.length > 0 && (
+          <div className="mb-4 text-center">
+            <p className="text-lg text-gray-700 font-medium">
               Found{" "}
-              <span className="font-semibold text-blue-700">
-                {matches.length}
-              </span>{" "}
+              <span className="font-bold text-blue-900">{matches.length}</span>{" "}
               bus{matches.length !== 1 ? "es" : ""} matching your search
             </p>
           </div>
         )}
 
-        {/* Loading */}
+        {/* Loading (initial buses list) */}
         {loading && (
           <BusLoader
             message="Loading available buses..."
             subtext="Please wait while we find the best options for you"
-            height="h-80" // optional
-            className="mb-8" // optional
+            height="h-80"
+            className="mb-8"
           />
         )}
 
         {/* Error (no technical messages exposed) */}
         {err && !loading && (
-          <div className="max-w-2xl mx-auto rounded-xl p-6 border border-blue-100 bg-blue-50 text-center shadow-sm">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <AlertCircle className="w-6 h-6 text-blue-700" />
+          <div className="max-w-2xl mx-auto rounded-xl p-8 border border-blue-200 bg-blue-50 text-center shadow-sm">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-blue-900" />
             </div>
-            <h3 className="text-lg font-bold mb-1">We couldn’t load buses</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              We couldn't load buses
+            </h3>
+            <p className="text-gray-600 mb-6">
               Please check your connection and try again.
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold px-5 py-2.5 rounded-lg transition"
+              className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold px-6 py-3 rounded-lg transition-all duration-200 hover:scale-105"
             >
               <RefreshCw className="w-4 h-4" />
               Try Again
@@ -513,20 +613,22 @@ export default function SelectedBusDetails({ userName = "" }) {
           </div>
         )}
 
-        {/* No Results */}
-        {!loading && !err && matches.length === 0 && (
-          <div className="max-w-2xl mx-auto rounded-xl p-8 border border-gray-200 bg-white text-center shadow-sm">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <MapPin className="w-8 h-8 text-gray-400" />
+        {/* No Results (filtered mode only) */}
+        {!loading && !err && hasFilters && matches.length === 0 && (
+          <div className="max-w-2xl mx-auto rounded-xl p-8 border border-gray-200 bg-white text-center shadow-lg">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <MapPin className="w-10 h-10 text-gray-400" />
             </div>
-            <h3 className="text-xl font-bold mb-2">No Buses Found</h3>
-            <p className="text-gray-600 mb-6">
+            <h3 className="text-2xl font-bold text-gray-900 mb-3">
+              No Buses Found
+            </h3>
+            <p className="text-gray-600 mb-6 text-lg">
               Try adjusting your search criteria or check for alternative
               routes.
             </p>
             <Link
               to="/"
-              className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold px-6 py-2.5 rounded-lg transition"
+              className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold px-8 py-3 rounded-lg transition-all duration-200 hover:scale-105"
             >
               <ChevronLeft className="w-4 h-4" />
               New Search
@@ -534,12 +636,99 @@ export default function SelectedBusDetails({ userName = "" }) {
           </div>
         )}
 
-        {/* Results — compact horizontal rows */}
-        {!loading && !err && matches.length > 0 && (
-          <div className="space-y-4">
+        {/* Results — filtered rows (existing behavior) */}
+        {!loading && !err && hasFilters && matches.length > 0 && (
+          <div className="space-y-6 max-w-6xl mx-auto">
             {matches.map((b) => (
               <BusCard key={b._id} bus={b} onBook={handleBook} date={qDate} />
             ))}
+          </div>
+        )}
+
+        {/* NEW: Default/all journeys when no filters are applied */}
+        {!loading && !err && !hasFilters && (
+          <div className="mx-auto max-w-7xl">
+            {/* Optional header */}
+            <div className="mb-4 text-center">
+              <p className="text-lg text-gray-700 font-medium">
+                Showing all journeys
+              </p>
+            </div>
+
+            {/* Default list */}
+            {defState.loading ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: defLimit }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-56 rounded-2xl border border-slate-200 bg-white shadow animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : defState.error ? (
+              <div className="rounded-2xl border border-rose-200 bg-white p-6 text-rose-700 shadow text-center">
+                {defState.error}
+              </div>
+            ) : (
+              <>
+                <AnimatePresence mode="popLayout">
+                  <div className="space-y-6 max-w-6xl mx-auto">
+                    {defState.items.map((raw, idx) => {
+                      const bus = normalizeJourneyToBus(raw);
+                      return (
+                        <BusCard
+                          key={bus._id || raw._id || raw.id || idx}
+                          bus={bus}
+                          date={undefined}
+                          isFiltered={false}
+                          onBook={() => handleDefaultBook(raw)}
+                        />
+                      );
+                    })}
+                  </div>
+                </AnimatePresence>
+
+                {/* Pagination */}
+                {defState.items.length > 0 && (
+                  <div className="mt-8 flex items-center justify-between gap-3 max-w-6xl mx-auto">
+                    <div className="text-sm text-slate-600">
+                      Page <span className="font-semibold">{defPage}</span> of{" "}
+                      <span className="font-semibold">
+                        {Math.max(1, defTotalPages)}
+                      </span>{" "}
+                      — <span className="font-semibold">{defState.total}</span>{" "}
+                      results
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled={defPage <= 1}
+                        onClick={() => setDefPage((p) => Math.max(1, p - 1))}
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold border transition ${
+                          defPage <= 1
+                            ? "text-slate-400 border-slate-200 cursor-not-allowed"
+                            : "text-slate-700 border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        Prev
+                      </button>
+                      <button
+                        disabled={defPage >= defTotalPages}
+                        onClick={() =>
+                          setDefPage((p) => Math.min(defTotalPages, p + 1))
+                        }
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold border transition ${
+                          defPage >= defTotalPages
+                            ? "text-slate-400 border-slate-200 cursor-not-allowed"
+                            : "text-slate-700 border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

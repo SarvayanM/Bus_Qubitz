@@ -152,6 +152,9 @@ export async function getJourneys(req, res) {
                 seatsAvailable: 1,
                 price: 1,
                 pickups: 1,
+                // include type/frequency so frontend cards can show consistent details
+                type: 1,
+                frequency: 1,
                 features: 1,
               },
             },
