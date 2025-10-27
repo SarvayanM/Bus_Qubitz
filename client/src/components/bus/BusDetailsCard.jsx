@@ -6,10 +6,8 @@ export default function BusDetailsCard({ bus }) {
         🚌 Bus Details
       </h2>
       <div className="space-y-2 text-sm">
-        <Item label="Bus Number" value={bus?.busNo} />
         <Item label="Bus Name" value={bus?.busName} />
-        <Item label="Type" value={bus?.type} />
-        <Item label="Frequency" value={bus?.frequency} />
+
         <Item
           label="Route"
           value={`${route?.from || "-"} → ${route?.to || "-"}`}
@@ -19,7 +17,6 @@ export default function BusDetailsCard({ bus }) {
           label="Price/Seat"
           value={`LKR ${Number(bus?.price || 0).toFixed(2)}`}
         />
-        <Item label="Total Seats" value={bus?.seats} />
       </div>
     </section>
   );

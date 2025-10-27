@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
@@ -13,7 +13,7 @@ import {
 import { showTimetableToast } from "./TimetableToast";
 import { getBookingsByBusAndDate } from "../../api/booking";
 
-// Parse flexible time strings into minutes since midnight (0-1439)
+/* ---------- time & date helpers ---------- */
 function parseTimeFlexible(t) {
   if (t == null) return null;
   let s = String(t).trim();
@@ -72,12 +72,42 @@ function formatDateISO(d) {
   return `${y}-${m}-${day}`;
 }
 
+function todayISO() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+function tomorrowISO() {
+  const t = new Date();
+  t.setDate(t.getDate() + 1);
+  const y = t.getFullYear();
+  const m = String(t.getMonth() + 1).padStart(2, "0");
+  const d = String(t.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+function minutesNowLocal() {
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+}
+function isSameDayISO(a, b) {
+  return !!a && !!b && formatDateISO(a) === formatDateISO(b);
+}
+
+/* ---------- component ---------- */
 export default function BusCard({
   bus = {},
-  date = null,
+  date = null, // when in filtered mode, this is the chosen date
   onBook,
-  isFiltered = false,
+  isFiltered = false, // true when showing filtered results
 }) {
+  // Treat presence of a filter date as filtered mode, even if the parent
+  // doesn't explicitly set isFiltered=true.
+  const isFilteredMode = useMemo(() => {
+    const hasFilterDate = !!formatDateISO(date);
+    return Boolean(isFiltered) || hasFilterDate;
+  }, [isFiltered, date]);
   const {
     _id,
     busNo,
@@ -97,7 +127,50 @@ export default function BusCard({
   const { from = "—", to = "—" } = route;
   const { departure = "—", arrival = "—" } = schedule || {};
 
-  const availDate = formatDateISO(date) || formatDateISO(new Date());
+  const departureMinutes = parseTimeFlexible(departure);
+  const arrivalMinutes = parseTimeFlexible(arrival);
+  const nextDayArrival =
+    arrivalMinutes != null &&
+    departureMinutes != null &&
+    arrivalMinutes < departureMinutes;
+
+  // Booking window logic (>= 60 minutes before departure => allow "today")
+  const nowMin = minutesNowLocal();
+  const canBookToday = useMemo(() => {
+    if (departureMinutes == null) return false;
+    return departureMinutes - nowMin >= 60;
+  }, [departureMinutes, nowMin]);
+
+  // Effective date to show seats for and to pass to booking:
+  // - Default list: today/tomorrow based on canBookToday
+  // - Filtered list: always the provided filter date
+  const effectiveDateISO = useMemo(() => {
+    if (isFilteredMode) {
+      return formatDateISO(date);
+    }
+    return canBookToday ? todayISO() : tomorrowISO();
+  }, [isFilteredMode, date, canBookToday]);
+
+  // Button label logic
+  const defaultLabel = canBookToday ? "Book for Today" : "Book for Tomorrow";
+  const label = isFilteredMode ? "Book Now" : defaultLabel;
+
+  // Filter validity (for showing button in filtered results only when valid)
+  const filtersValid =
+    isFilteredMode &&
+    route?.from &&
+    route?.to &&
+    route.from !== "—" &&
+    route.to !== "—" &&
+    !!effectiveDateISO;
+
+  // Blocking within one hour (filtered: only if selected date is today)
+  const filteredDateIsToday =
+    isFilteredMode &&
+    effectiveDateISO &&
+    isSameDayISO(effectiveDateISO, todayISO());
+  const blockBooking =
+    isFiltered && filteredDateIsToday && !canBookToday ? true : false;
 
   const [availableSeats, setAvailableSeats] = useState(
     typeof seatsAvailableRaw === "number" ? seatsAvailableRaw : seatsTotal
@@ -105,16 +178,23 @@ export default function BusCard({
   const [loading, setLoading] = useState(false);
   const [opening, setOpening] = useState(false);
 
+  // Fetch seats:
+  // - Default list => today/tomorrow based on button label
+  // - Filtered list => for the filter date (only if filtersValid)
   useEffect(() => {
     let mounted = true;
     async function fetchAvailableSeats() {
+      // In filtered mode, only fetch if filters are valid (so we don't
+      // show a button or seat count prematurely).
+      if (isFilteredMode && !filtersValid) return;
+
       setLoading(true);
       try {
-        if (!_id || !availDate) {
+        if (!_id || !effectiveDateISO) {
           if (mounted) setAvailableSeats(seatsTotal);
           return;
         }
-        const data = await getBookingsByBusAndDate(_id, availDate);
+        const data = await getBookingsByBusAndDate(_id, effectiveDateISO);
         const bookedSeats = [
           ...(data?.bookedByGents || []),
           ...(data?.bookedByLadies || []),
@@ -133,7 +213,7 @@ export default function BusCard({
     return () => {
       mounted = false;
     };
-  }, [_id, availDate, seatsTotal]);
+  }, [_id, seatsTotal, effectiveDateISO, isFilteredMode, filtersValid]);
 
   const openTimetable = () => {
     if (!pickups || pickups.length === 0) {
@@ -144,14 +224,22 @@ export default function BusCard({
     showTimetableToast(pickups, () => setOpening(false));
   };
 
-  const departureMinutes = parseTimeFlexible(departure);
-  const arrivalMinutes = parseTimeFlexible(arrival);
-  const nextDayArrival =
-    arrivalMinutes != null &&
-    departureMinutes != null &&
-    arrivalMinutes < departureMinutes;
-
-  const label = isFiltered ? "View & Book" : "Book Now";
+  // Click handler: pass id, date, and key bus details to parent (which navigates)
+  const handleBook = () => {
+    if (!onBook) return;
+    const payload = {
+      busId: _id,
+      dateISO: effectiveDateISO,
+      route: { from, to },
+      busNo,
+      busName,
+      type,
+      frequency,
+      schedule: { departure, arrival },
+      seatsTotal,
+    };
+    onBook(_id, effectiveDateISO, payload);
+  };
 
   return (
     <motion.div
@@ -169,13 +257,12 @@ export default function BusCard({
             <ArrowRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
             <span className="truncate">{to}</span>
             {busNo && (
-              <span className="ml-2 text-[11px] leading-5 text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">
-                #{busNo}
+              <span className="ml-2 text-[11px] leading-5 text-slate-600 font-medium bg-pink-100 px-2 py-0.5 rounded-full">
+                {busNo}
               </span>
             )}
           </h3>
 
-          {/* Bus meta row with icon + colored chips */}
           <p className="text-slate-700 mb-3 flex flex-wrap items-center gap-2">
             <Bus className="w-4 h-4 text-blue-900" />
             <span className="font-medium text-slate-900 text-[12px] bg-amber-50 border border-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
@@ -190,7 +277,7 @@ export default function BusCard({
           </p>
 
           <div className="grid grid-cols-3 gap-3 md:gap-4">
-            {/* Departure (no date shown) */}
+            {/* Departure */}
             <div className="text-center rounded-xl border border-slate-200 bg-white px-3 py-2.5">
               <div className="flex items-center justify-center gap-1 mb-0.5">
                 <Clock className="w-4 h-4 text-blue-900" />
@@ -201,7 +288,6 @@ export default function BusCard({
               <p className="text-base md:text-lg font-bold text-slate-900">
                 {departure}
               </p>
-              {/* From / To below the time */}
               <div className="mt-1 text-[11px] text-slate-600">
                 <div>
                   <span className="font-medium">From:</span> {from}
@@ -209,7 +295,7 @@ export default function BusCard({
               </div>
             </div>
 
-            {/* Duration with lighter continuous arrow line */}
+            {/* Duration (arrow) */}
             <div className="text-center rounded-xl px-3 py-2.5">
               <div className="flex items-center justify-center gap-1 mb-1">
                 <Clock className="w-4 h-4 text-blue-900" />
@@ -217,8 +303,6 @@ export default function BusCard({
                   DURATION (APPROXIMATE)
                 </p>
               </div>
-
-              {/* Arrow line with duration text centered and clearly visible */}
               <div className="relative w-full">
                 <svg
                   className="w-full h-6 text-slate-300"
@@ -259,14 +343,9 @@ export default function BusCard({
                   </span>
                 </div>
               </div>
-
-              {/* From → To under the arrow */}
-              <p className="text-[11px] text-slate-700 mt-1">
-                {from} <span className="text-slate-400">→</span> {to}
-              </p>
             </div>
 
-            {/* Arrival with neutral indicator */}
+            {/* Arrival */}
             <div className="text-center rounded-xl border border-slate-200 bg-white px-3 py-2.5">
               <div className="flex items-center justify-center gap-2 mb-0.5">
                 <div className="flex items-center gap-1">
@@ -288,7 +367,6 @@ export default function BusCard({
               <p className="text-base md:text-lg font-bold text-slate-900">
                 {arrival}
               </p>
-              {/* From / To below the time */}
               <div className="mt-1 text-[11px] text-slate-600">
                 <div>
                   <span className="font-medium">To:</span> {to}
@@ -314,6 +392,12 @@ export default function BusCard({
               <RefreshCw className="w-5 h-5 animate-spin" />
               <span className="text-sm">Checking seats...</span>
             </div>
+          ) : isFilteredMode && !filtersValid ? (
+            <div className="text-sm text-slate-600">
+              Enter valid <span className="font-medium">From</span>,{" "}
+              <span className="font-medium">To</span>, and{" "}
+              <span className="font-medium">Date</span> to view seats.
+            </div>
           ) : availableSeats === 0 ? (
             <div className="bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg font-semibold text-sm">
               Fully Booked
@@ -329,6 +413,12 @@ export default function BusCard({
                 <div className="text-slate-400">/</div>
                 <div className="font-semibold text-slate-900">{seatsTotal}</div>
               </div>
+              {!isFilteredMode && (
+                <div className="text-[11px] text-slate-500">
+                  Showing seats for{" "}
+                  <span className="font-medium">{effectiveDateISO}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -339,23 +429,28 @@ export default function BusCard({
           </div>
 
           <div className="flex gap-2.5 w-full justify-center">
-            <button
-              onClick={() => onBook && onBook(_id, availDate)}
-              disabled={availableSeats === 0}
-              className={`inline-flex items-center justify-center gap-2 font-semibold px-5 py-3 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-blue-200 hover:shadow-sm ${
-                availableSeats === 0
-                  ? "bg-slate-200 text-slate-500 cursor-not-allowed w-full"
-                  : "bg-blue-900 hover:bg-blue-800 text-white shadow-sm w-full md:w-auto cursor-pointer"
-              }`}
-              title={
-                availableSeats === 0
-                  ? "No seats available"
-                  : "Proceed to booking"
-              }
-            >
-              <span>{availableSeats === 0 ? "No Seats" : label}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {/* Primary booking button */}
+            {(!isFilteredMode || (isFilteredMode && filtersValid)) && (
+              <button
+                onClick={handleBook}
+                disabled={availableSeats === 0 || blockBooking}
+                className={`inline-flex items-center justify-center gap-2 font-semibold px-5 py-3 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-blue-200 hover:shadow-sm ${
+                  availableSeats === 0 || blockBooking
+                    ? "bg-slate-200 text-slate-500 cursor-not-allowed w-full"
+                    : "bg-blue-900 hover:bg-blue-800 text-white shadow-sm w-full md:w-auto cursor-pointer"
+                }`}
+                title={
+                  availableSeats === 0
+                    ? "No seats available"
+                    : blockBooking
+                    ? "Booking disabled within 60 minutes of departure"
+                    : "Proceed to booking"
+                }
+              >
+                <span>{label}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
 
             <button
               disabled={opening}
@@ -371,6 +466,13 @@ export default function BusCard({
               Timetable
             </button>
           </div>
+
+          {/* Hint for filtered + blocked */}
+          {blockBooking && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+              You can’t book within 60 minutes of departure for today.
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

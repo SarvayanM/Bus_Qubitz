@@ -221,7 +221,7 @@ export default function SelectedBusDetails({ userName = "" }) {
   // Booking form state (for search form)
   const [from, setFrom] = useState(qFrom);
   const [to, setTo] = useState(qTo);
-  const [date, setDate] = useState(qDate || todayISO());
+  const [date, setDate] = useState(qDate || "");
 
   // Form errors
   const [formError, setFormError] = useState("");
@@ -252,7 +252,7 @@ export default function SelectedBusDetails({ userName = "" }) {
     setQDate(dateParam.trim());
     setFrom(fromParam.trim());
     setTo(toParam.trim());
-    setDate(dateParam.trim() || todayISO());
+    setDate(dateParam.trim() || "");
   }, [searchParams]);
 
   // Fetch all buses once
@@ -345,6 +345,16 @@ export default function SelectedBusDetails({ userName = "" }) {
     const params = new URLSearchParams({ from, to, date }).toString();
     navigate(`/selectedBusDetails?${params}`);
     setFormError("");
+  };
+
+  // Clear filters in the form and URL
+  const handleClear = () => {
+    setFrom("");
+    setTo("");
+    setDate("");
+    setFormError("");
+    // Clear URL params — use setSearchParams so useEffect syncs qFrom/qTo/qDate
+    setSearchParams({});
   };
 
   // Case-insensitive filter by both from and to
@@ -459,37 +469,48 @@ export default function SelectedBusDetails({ userName = "" }) {
                     <Calendar className="w-4 h-4 text-blue-900" />
                     Date
                   </label>
+
                   <input
                     type="date"
-                    value={date}
+                    value={date || ""}
                     min={todayISO()}
                     onChange={(e) => setDate(e.target.value)}
                     className="h-12 rounded-lg border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent transition-all duration-200 bg-white shadow-sm hover:shadow [color-scheme:light]"
-                    placeholder="mm/dd/yyyy"
                   />
                 </div>
 
-                {/* Submit */}
+                {/* Submit / Clear */}
                 <div className="flex md:justify-end pt-6">
-                  <button
-                    type="submit"
-                    className="w-full md:w-auto bg-blue-900 hover:bg-blue-800 text-white font-semibold h-12 px-8 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2 group"
-                  >
-                    <svg
-                      className="w-5 h-5 group-hover:scale-110 transition-transform"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                  <div className="w-full md:w-auto flex gap-3">
+                    <button
+                      type="button"
+                      onClick={handleClear}
+                      className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 border border-gray-300 text-slate-700 bg-white h-12 px-4 rounded-lg hover:shadow transition"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                    Search Buses
-                  </button>
+                      <RefreshCw className="w-4 h-4" />
+                      Clear
+                    </button>
+
+                    <button
+                      type="submit"
+                      className="flex-1 md:flex-initial bg-blue-900 hover:bg-blue-800 text-white font-semibold h-12 px-6 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2"
+                    >
+                      <svg
+                        className="w-5 h-5 group-hover:scale-110 transition-transform"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
+                      </svg>
+                      Search Buses
+                    </button>
+                  </div>
                 </div>
               </div>
 

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import toast, { Toaster } from "react-hot-toast";
-import { motion } from "framer-motion";
+import toast from "react-hot-toast";
+import { MapPin, Clock, Tag, Bus as BusIcon, Calendar } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 import BusDetailsCard from "../../components/bus/BusDetailsCard";
 import SeatLayout from "../../components/seats/SeatLayout";
@@ -88,10 +89,18 @@ export default function BusBookingDashboard() {
       if (!qId || !travelDate) return;
       try {
         const data = await getBookingsByBusAndDate(qId, travelDate);
-        setBookedMale(new Set(data?.bookedMale || []));
-        setBookedFemale(new Set(data?.bookedFemale || []));
-        setBookedOther(new Set(data?.bookedOther || []));
-        setUnavailableSeats(new Set(data?.unavailableSeats || []));
+        // API returns bookedByGents / bookedByLadies / unavailableSeats
+        const toNums = (arr) =>
+          new Set((arr || []).map((it) => Number(it?.number ?? it)));
+        setBookedMale(toNums(data?.bookedByGents || data?.bookedMale || []));
+        setBookedFemale(
+          toNums(data?.bookedByLadies || data?.bookedFemale || [])
+        );
+        // Other bookings may not be provided by API; keep as empty set if missing
+        setBookedOther(toNums(data?.bookedOther || []));
+        setUnavailableSeats(
+          toNums(data?.unavailableSeats || data?.unavailable || [])
+        );
         setSelectedSeatGenders(new Map());
       } catch (e) {
         console.warn(e);
@@ -193,66 +202,125 @@ export default function BusBookingDashboard() {
     navigate("/checkoutSummary", { state: payload });
   };
 
-  // Theming container
+  // ----------------------------- UI (Styling Only) -----------------------------
   return (
-    <div
-      className="min-h-screen text-gray-900 pt-24 pb-10"
-      style={{
-        backgroundColor: "#ffffff",
-        backgroundImage:
-          "radial-gradient(circle at 20% 10%, rgba(29,78,216,0.06) 0, transparent 45%), radial-gradient(circle at 80% 0%, rgba(30,64,175,0.05) 0, transparent 40%), radial-gradient(circle at 50% 100%, rgba(29,78,216,0.06) 0, transparent 40%)",
-      }}
-    >
-      <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
-
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Header meta */}
-        <header className="mb-6">
-          <h1 className="text-3xl font-extrabold tracking-tight mb-3">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-blue-800">
-              Bus Booking
-            </span>
+    <div className="min-h-screen bg-white text-gray-900 antialiased">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-24 pb-12">
+        {/* Header Section */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">
+            Bus Booking Dashboard
           </h1>
-          {bus && (
-            <div className="flex flex-wrap gap-2 text-sm">
-              <span className="inline-flex items-center gap-2 bg-white text-gray-800 px-3 py-1.5 rounded-full border border-gray-200 shadow-sm">
-                <span>📍 From:</span>
-                <strong>{bus?.route?.from || "-"}</strong>
-              </span>
-              <span className="inline-flex items-center gap-2 bg-white text-gray-800 px-3 py-1.5 rounded-full border border-gray-200 shadow-sm">
-                <span>🎯 To:</span>
-                <strong>{bus?.route?.to || "-"}</strong>
-              </span>
-              <span className="inline-flex items-center gap-2 bg-white text-gray-800 px-3 py-1.5 rounded-full border border-gray-200 shadow-sm">
-                <span>📅 Date:</span>
-                <strong>{travelDate || "-"}</strong>
-              </span>
-            </div>
-          )}
-        </header>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            Select your seats and complete passenger details to proceed with
+            your booking
+          </p>
+        </div>
 
-        {/* Loading / errors */}
-        {loading && (
-          <div className="rounded-xl border border-gray-200 bg-white px-5 py-10 text-center shadow-sm">
-            <div className="w-10 h-10 border-2 border-gray-200 border-t-blue-800 rounded-full animate-spin mx-auto mb-3" />
-            <p className="font-semibold">Loading…</p>
+        {/* Meta chips */}
+        {bus && (
+          <div
+            className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3"
+            role="list"
+            aria-label="Trip details"
+          >
+            <MetaChip
+              icon={<BusIcon className="h-4 w-4" aria-hidden="true" />}
+              label="Bus"
+              labelClass="text-blue-700"
+              value={bus?.busName || bus?.bus_name || "-"}
+            />
+            <MetaChip
+              icon={<MapPin className="h-4 w-4" aria-hidden="true" />}
+              label="From"
+              labelClass="text-emerald-700"
+              value={bus?.route?.from || "-"}
+            />
+            <MetaChip
+              icon={<MapPin className="h-4 w-4" aria-hidden="true" />}
+              label="To"
+              labelClass="text-rose-700"
+              value={bus?.route?.to || "-"}
+            />
+            <MetaChip
+              icon={<Clock className="h-4 w-4" aria-hidden="true" />}
+              label="Departure"
+              labelClass="text-amber-700"
+              value={bus?.schedule?.departure || bus?.departure || "-"}
+            />
+            <MetaChip
+              icon={<Calendar className="h-4 w-4" aria-hidden="true" />}
+              label="Date"
+              labelClass="text-indigo-700"
+              value={travelDate || "-"}
+            />
+            <MetaChip
+              icon={<Tag className="h-4 w-4" aria-hidden="true" />}
+              label="Price"
+              labelClass="text-fuchsia-700"
+              value={
+                bus?.price != null ? `LKR ${Number(bus.price).toFixed(2)}` : "-"
+              }
+            />
           </div>
         )}
+      </div>
+
+      {/* Loading / errors */}
+      <AnimatePresence initial={false} mode="wait">
+        {loading && (
+          <motion.div
+            key="loading"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center shadow-sm"
+          >
+            <div className="w-10 h-10 border-2 border-gray-200 border-t-blue-900 rounded-full animate-spin mx-auto mb-3" />
+            <p className="font-semibold text-gray-800">Loading…</p>
+          </motion.div>
+        )}
+
         {!loading && err && (
-          <div className="max-w-2xl mx-auto rounded-xl p-6 border border-blue-100 bg-blue-50 text-center shadow-sm">
-            <h3 className="text-lg font-bold mb-1">We couldn’t load the bus</h3>
-            <p className="text-sm text-gray-600 mb-4">
+          <motion.div
+            key="error"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="max-w-2xl mx-auto rounded-xl p-6 border border-blue-100 bg-white text-center shadow-sm "
+          >
+            <h3 className="text-lg font-bold mb-1 text-gray-900">
+              We couldn’t load the bus
+            </h3>
+            <p className="text-sm text-gray-600">
               Please check the link and try again.
             </p>
-          </div>
+          </motion.div>
         )}
+      </AnimatePresence>
 
-        {!loading && !err && bus && (
-          <div className="grid lg:grid-cols-12 gap-6">
-            {/* Left — Bus info (smaller) */}
-            <div className="lg:col-span-4">
-              <BusDetailsCard bus={bus} />
-              <div className="mt-6">
+      {/* Content */}
+      {!loading && !err && bus && (
+        <div className="grid lg:grid-cols-12 gap-0 ml-16">
+          {/* Left — Seat layout */}
+          <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 24 }}
+            className="lg:col-span-4 lg:pr-8 pb-6 lg:pb-0"
+            aria-labelledby="seats-heading"
+          >
+            <Card>
+              <div className="text-center mb-8">
+                <h1 className="text-2xl font-bold text-gray-900 mb-3">
+                  Select Seats
+                </h1>
+                <p className="text-mt text-gray-600 max-w-2xl mx-auto">
+                  Choose seat(s) and set passenger gender for each
+                </p>
+                        
+              </div>
+              <div className="mt-4 flex justify-center">
                 <SeatLayout
                   seatLayout={seatLayout}
                   seatStatus={seatStatus}
@@ -262,23 +330,43 @@ export default function BusBookingDashboard() {
                   selectedSeatGenders={selectedSeatGenders}
                 />
               </div>
-            </div>
+            </Card>
+          </motion.section>
 
-            {/* Right — Passenger (larger) */}
-            <div className="lg:col-span-8">
-              <PassengerDetails
-                bus={bus}
-                travelDate={travelDate}
-                selectedSeatGenders={selectedSeatGenders}
-                subtotal={subtotal}
-                canProceed={canProceed}
-                onProceed={proceed}
-                confirmationResultRef={confirmationResultRef}
+          {/* Right — Passenger details */}
+          <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              type: "spring",
+              stiffness: 260,
+              damping: 24,
+              delay: 0.03,
+            }}
+            className="lg:col-span-8 lg:pl-8 pb-6 lg:pb-0"
+            aria-labelledby="passenger-heading"
+          >
+            <Card className="h-full">
+              <CardHeader
+                id="passenger-heading"
+                title="Passenger Details"
+                subtitle="Enter contact info, pickup/drop, and confirm your booking."
               />
-            </div>
-          </div>
-        )}
-      </div>
+              <div className="mt-4">
+                <PassengerDetails
+                  bus={bus}
+                  travelDate={travelDate}
+                  selectedSeatGenders={selectedSeatGenders}
+                  subtotal={subtotal}
+                  canProceed={canProceed}
+                  onProceed={proceed}
+                  confirmationResultRef={confirmationResultRef}
+                />
+              </div>
+            </Card>
+          </motion.section>
+        </div>
+      )}
     </div>
   );
 }
@@ -287,4 +375,48 @@ export default function BusBookingDashboard() {
 function passengerOk(confirmationResultRef) {
   // PassengerDetails sets a window flag once verified
   return !!window.__phoneVerified;
+}
+
+/* ----------------------------- UI Helpers ----------------------------- */
+
+function MetaChip({ icon, label, value, labelClass = "" }) {
+  return (
+    <div
+      role="listitem"
+      className="group flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:shadow-md focus-within:ring-2 focus-within:ring-blue-900"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-gray-500 group-hover:text-blue-900 transition">
+          {icon}
+        </span>
+        <span
+          className={`text-xs font-semibold uppercase tracking-wide ${labelClass}`}
+        >
+          {label}
+        </span>
+      </div>
+      <div className="truncate text-sm font-medium text-gray-900">{value}</div>
+    </div>
+  );
+}
+
+function Card({ children, className = "" }) {
+  return (
+    <div
+      className={`rounded-2xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({ id, title, subtitle }) {
+  return (
+    <header id={id} className="flex items-start justify-between">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        {subtitle && <p className="text-sm text-gray-600 mt-1">{subtitle}</p>}
+      </div>
+    </header>
+  );
 }

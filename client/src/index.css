@@ -61,9 +61,10 @@ body {
   z-index: 999999 !important;
 }
 
-/* Force select dropdown to open downward */
+/* Remove native dropdown arrow from selects (useful when custom caret handled by UI) */
 select {
-  appearance: auto;
-  -webkit-appearance: menulist;
-  -moz-appearance: menulist;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: none;
 }
