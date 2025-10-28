@@ -152,10 +152,12 @@ export default function BusLoader({
 
       {/* BUS */}
       <motion.div
-        initial={{ x: "-20%" }}
-        animate={{ x: ["-20%", "110%"] }}
+        // animate using the `left` CSS property so the motion is relative to the loader div
+        initial={{ left: "-100%" }}
+        animate={{ left: ["-100%", "100%"] }}
         transition={{ duration: 4.2, ease: "linear", repeat: Infinity }}
-        className="absolute bottom-16"
+        className="absolute bottom-16 left-0"
+        style={{ position: "absolute" }}
       >
         <motion.div
           animate={{ y: [0, -2, 0] }}

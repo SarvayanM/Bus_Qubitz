@@ -31,7 +31,7 @@ export default function Footer() {
                   />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-white">leoforeio</h2>
+              <h2 className="text-2xl font-bold text-white">BookMyBus</h2>
             </div>
             <p className="text-gray-300 leading-relaxed text-base max-w-sm text-center md:text-left">
               Your trusted partner in safe and reliable travel across Sri Lanka.
@@ -155,10 +155,10 @@ export default function Footer() {
                 <div>
                   <p className="text-gray-400 text-sm mb-1">Email</p>
                   <a
-                    href="mailto:support@leoforeio.lk"
+                    href="mailto:support@BookMyBus.lk"
                     className="text-white hover:underline font-medium text-lg"
                   >
-                    support@leoforeio.lk
+                    support@BookMyBus.lk
                   </a>
                 </div>
               </div>
@@ -260,7 +260,7 @@ export default function Footer() {
         >
           <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
             <p className="text-gray-300 text-lg text-center lg:text-left">
-              &copy; {new Date().getFullYear()} leoforeio. All rights reserved.
+              &copy; {new Date().getFullYear()} BookMyBus. All rights reserved.
             </p>
             <div className="flex items-center gap-8 text-lg">
               {[

@@ -113,6 +113,55 @@ export default function Home({ userName = "" }) {
     navigate(`/selectedBusDetails?${params}`);
   };
 
+  useEffect(() => {
+    const selector = [
+      ".animate-fly-in-from-top",
+      ".animate-fly-in-from-bottom",
+      ".animate-fly-in-from-left",
+      ".animate-fly-in-from-right",
+    ].join(",");
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const el = entry.target;
+          if (entry.isIntersecting) {
+            // entering viewport → add class to start animation
+            el.classList.add("in-view");
+          } else {
+            // leaving viewport → remove so it can retrigger on the next entry
+            el.classList.remove("in-view");
+          }
+        });
+      },
+      {
+        // Slight hysteresis to avoid flicker near fold
+        threshold: 0.2,
+        rootMargin: "0px 0px -10% 0px",
+      }
+    );
+
+    const scan = () => {
+      document.querySelectorAll(selector).forEach((el) => io.observe(el));
+    };
+
+    // initial scan
+    scan();
+
+    // watch for async-rendered content (e.g., after getBuses())
+    const mo = new MutationObserver(() => scan());
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    // ensure we catch nodes rendered this tick
+    const raf = requestAnimationFrame(scan);
+
+    return () => {
+      io.disconnect();
+      mo.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [buses.length]); // rescan when cards count changes
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
       {/* Hero Section */}
@@ -140,7 +189,7 @@ export default function Home({ userName = "" }) {
             <div className="inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-full px-6 py-3  border border-white/20">
               <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
               <span className="text-sm font-medium text-white/90">
-                Welcome to Leoforeio Bus System
+                Welcome to BookMyBus
               </span>
             </div>
 
@@ -380,15 +429,15 @@ export default function Home({ userName = "" }) {
       {/* Exclusive Journeys Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 ">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16 animate-fade-in-up">
-            <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium mb-4">
+          <div className="text-center mb-16 animate-fly-in-from-top">
+            <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium mb-4 animate-fly-in-from-left">
               <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
               Premium Services
             </div>
-            <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
+            <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6 animate-fly-in-from-right">
               Exclusive Journey Collection
             </h2>
-            <p className="text-gray-600 text-xl max-w-3xl mx-auto leading-relaxed">
+            <p className="text-gray-600 text-xl max-w-3xl mx-auto leading-relaxed animate-fly-in-from-bottom">
               Curated premium routes offering exceptional comfort, reliability,
               and service excellence across Sri Lanka.
             </p>
@@ -460,22 +509,22 @@ export default function Home({ userName = "" }) {
       {/* Features Section */}
       <section className="py-20 bg-gray-50 text-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16 animate-fade-in-up">
-            <div className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 py-2 rounded-full text-sm font-medium mb-4 shadow-sm border border-gray-200">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 py-2 rounded-full text-sm font-medium mb-4 shadow-sm border border-gray-200 animate-fly-in-from-left">
               <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
               Why Choose Us
             </div>
-            <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
+            <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6 animate-fly-in-from-right">
               Excellence in Every Journey
             </h2>
-            <p className="text-gray-600 text-xl max-w-3xl mx-auto leading-relaxed">
-              Discover why thousands of travelers trust Leoforeio for their
+            <p className="text-gray-600 text-xl max-w-3xl mx-auto leading-relaxed animate-fly-in-from-bottom">
+              Discover why thousands of travelers trust BookMyBus for their
               intercity travel needs.
             </p>
           </div>
 
           <div
-            className="flex justify-center mb-16 animate-fade-in-up"
+            className="flex justify-center mb-16 animate-fly-in-from-top"
             style={{ animationDelay: "0.2s" }}
           >
             <div className="max-w-4xl text-center">
@@ -536,7 +585,7 @@ function ExclusiveCard({ bus, index }) {
 
   return (
     <div
-      className="group bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-xl transition-all duration-500 overflow-hidden animate-fade-in-up hover:scale-[1.02]"
+      className="group bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-xl transition-all duration-500 overflow-hidden animate-fly-in-from-bottom hover:scale-[1.02]"
       style={{ animationDelay: `${index * 0.06}s` }}
     >
       <div className="relative overflow-hidden">
@@ -592,7 +641,7 @@ function ExclusiveCard({ bus, index }) {
 function FeatureCard({ title, description, icon, delay }) {
   return (
     <div
-      className="bg-white border border-gray-200 rounded-2xl p-8 text-center hover:shadow-xl transition-all duration-500 transform hover:scale-[1.02] animate-fade-in-up group"
+      className="bg-white border border-gray-200 rounded-2xl p-8 text-center hover:shadow-xl transition-all duration-500 transform hover:scale-[1.02] animate-fly-in-from-bottom group"
       style={{ animationDelay: delay }}
     >
       <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-2xl flex items-center justify-center text-2xl mb-6 mx-auto transform group-hover:scale-110 transition-transform duration-300 shadow-lg">
@@ -612,7 +661,7 @@ function FeatureCard({ title, description, icon, delay }) {
 function StatCard({ number, label, delay }) {
   return (
     <div
-      className="text-center animate-fade-in-up"
+      className="text-center animate-fly-in-from-bottom"
       style={{ animationDelay: delay }}
     >
       <div className="text-3xl font-bold text-gray-900 mb-2 bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">

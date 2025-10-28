@@ -1,4 +1,4 @@
-// src/pages/BookingHistory.jsx
+// frontend/src/pages/BookingHistory.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Cookies from "js-cookie";
 import toast from "react-hot-toast";
@@ -7,6 +7,7 @@ import {
   getPassengerBookingHistoryByPhone,
   cancelBookingById,
 } from "../../api/booking";
+import { getCancelledBookingsByPhone } from "../../api/cancelledBookings";
 import {
   toDepartureDate,
   msUntil,
@@ -14,7 +15,7 @@ import {
   refundPercent,
 } from "../../utils/time";
 
-// ---- small icons (kept inline to avoid deps) ----
+/* ----------------------------- inline icons ----------------------------- */
 const SearchIcon = () => (
   <svg
     className="w-4 h-4"
@@ -105,7 +106,7 @@ const CANCEL_REASONS = [
   "Other",
 ];
 
-// ---- Cancel dialog + countdown ----
+/* --------------------------- modal & cancel flow --------------------------- */
 function Modal({ open, onClose, children }) {
   if (!open) return null;
   return (
@@ -143,8 +144,6 @@ function CancelAction({ booking, refundPct, onCancelled }) {
     try {
       setSubmitting(true);
       const res = await cancelBookingById(booking._id, { reason });
-
-      // Polished success toast (no logic change; just styling)
       toast.success(
         `Cancelled. Refunded ${res?.refundedAmount ?? 0} to wallet.`,
         {
@@ -154,7 +153,6 @@ function CancelAction({ booking, refundPct, onCancelled }) {
           iconTheme: { primary: "#0c4a6e", secondary: "#fff" },
         }
       );
-
       setOpen(false);
       onCancelled?.();
     } catch (e) {
@@ -230,7 +228,6 @@ function CancelAction({ booking, refundPct, onCancelled }) {
 }
 
 function CancelCell({ booking, onCancelled }) {
-  // robust departure time resolution (works with both normalized and nested bus)
   const departTime =
     booking?.departureTime ||
     booking?.bus?.schedule?.departure ||
@@ -290,11 +287,20 @@ function CancelCell({ booking, onCancelled }) {
   );
 }
 
-// ---- Main component ----
+/* ------------------------------- main page ------------------------------- */
 export default function BookingHistory() {
-  const [state, setState] = useState({ loading: true, error: "", data: null });
+  const [activeState, setActiveState] = useState({
+    loading: true,
+    error: "",
+    data: null,
+  }); // normal bookings
+  const [cancelledState, setCancelledState] = useState({
+    loading: false,
+    error: "",
+    data: null,
+  }); // cancelled bookings
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("All");
+  const [status, setStatus] = useState("Confirmed");
   const [date, setDate] = useState("");
   const [phone, setPhone] = useState("");
 
@@ -302,23 +308,83 @@ export default function BookingHistory() {
     setPhone(Cookies.get("phone") || "");
   }, []);
 
-  const reload = async () => {
-    if (!phone) return;
-    setState((s) => ({ ...s, loading: true, error: "" }));
+  const loadActive = async (p) => {
+    if (!p) return;
+    setActiveState((s) => ({ ...s, loading: true, error: "" }));
     try {
-      const json = await getPassengerBookingHistoryByPhone(phone);
-      setState({ loading: false, error: "", data: json });
+      const json = await getPassengerBookingHistoryByPhone(p);
+      setActiveState({ loading: false, error: "", data: json });
     } catch (e) {
-      setState({ loading: false, error: e.message, data: null });
+      setActiveState({ loading: false, error: e.message, data: null });
     }
   };
+
+  const loadCancelled = async (p) => {
+    if (!p) return;
+    setCancelledState((s) => ({ ...s, loading: true, error: "" }));
+    try {
+      const json = await getCancelledBookingsByPhone(p);
+      setCancelledState({ loading: false, error: "", data: json });
+    } catch (e) {
+      setCancelledState({ loading: false, error: e.message, data: null });
+    }
+  };
+
+  // initial load for active bookings
   useEffect(() => {
-    reload();
+    if (phone) loadActive(phone);
   }, [phone]);
 
+  // when user flips to "Cancelled", fetch cancelled list (lazy)
+  useEffect(() => {
+    if (
+      status === "Cancelled" &&
+      phone &&
+      !cancelledState.data &&
+      !cancelledState.loading
+    ) {
+      loadCancelled(phone);
+    }
+  }, [status, phone]); // eslint-disable-line
+
+  const usingCancelledDataset = status === "Cancelled";
+  const baseList = usingCancelledDataset
+    ? cancelledState.data?.items || []
+    : activeState.data?.bookings || [];
+
+  // normalize records so table rendering stays simple
+  const normalizedRows = useMemo(() => {
+    return baseList.map((item) => {
+      if (!usingCancelledDataset) return item; // already a live Booking doc
+
+      // CancelledBooking shape -> normalize to booking-like for UI reuse
+      const b = item.booking || {};
+      return {
+        _id: item._id, // this is the cancelled document id, fine for row key
+        travelDate: b.travelDate,
+        departureTime: b.departureTime || b?.bus?.schedule?.departure,
+        seats: b.seats,
+        pickup: b.pickup,
+        drop: b.drop,
+        payment: b.payment,
+        createdAt: b.createdAt || item.processedAt, // fallback
+        status: "Cancelled",
+        reason: item.reason || b.reason,
+        passenger: b.passenger,
+        bus: b.bus,
+        // expose cancel meta for UI if needed
+        _cancelMeta: {
+          refundPercent: item.refundPercent,
+          refundedAmount: item.refundedAmount,
+          processedAt: item.processedAt,
+        },
+      };
+    });
+  }, [baseList, usingCancelledDataset]);
+
+  // search + filter + date
   const rows = useMemo(() => {
-    const list = state.data?.bookings || [];
-    return list
+    return normalizedRows
       .filter((b) =>
         !query
           ? true
@@ -339,14 +405,15 @@ export default function BookingHistory() {
               .includes(query.toLowerCase())
       )
       .filter((b) =>
-        status === "All"
+        status === "All" || usingCancelledDataset
           ? true
           : (b?.status || "").toLowerCase() === status.toLowerCase()
       )
       .filter((b) => (date ? String(b?.travelDate) === date : true));
-  }, [state.data, query, status, date]);
+  }, [normalizedRows, query, status, date, usingCancelledDataset]);
 
   const anyCancellable = useMemo(() => {
+    if (usingCancelledDataset) return false;
     return rows.some((b) => {
       if (!b || b?.status === "Cancelled") return false;
       const departTime =
@@ -358,10 +425,12 @@ export default function BookingHistory() {
       const hoursLeft = msUntil(departAt) / 3600000;
       return refundPercent(hoursLeft) >= 0;
     });
-  }, [rows]);
+  }, [rows, usingCancelledDataset]);
 
   const passengerDisplayName = (() => {
-    const p = state.data?.passenger;
+    const p = usingCancelledDataset
+      ? cancelledState.data?.passenger
+      : activeState.data?.passenger;
     if (p && (p.fname || p.lname))
       return `${(p.fname || "").trim()} ${(p.lname || "").trim()}`.trim();
     const first = rows[0]?.passenger;
@@ -372,10 +441,25 @@ export default function BookingHistory() {
     return null;
   })();
 
+  const pageLoading = usingCancelledDataset
+    ? cancelledState.loading
+    : activeState.loading;
+  const pageError = usingCancelledDataset
+    ? cancelledState.error
+    : activeState.error;
+
+  const refreshCurrent = () => {
+    if (usingCancelledDataset) {
+      loadCancelled(phone);
+    } else {
+      loadActive(phone);
+    }
+  };
+
   const inputCls =
     "w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm outline-none transition-all duration-200 focus:border-blue-900 focus:ring-2 focus:ring-blue-900/20 hover:shadow-sm";
 
-  if (state.loading) {
+  if (pageLoading) {
     return (
       <div className="min-h-screen py-8 px-4">
         <div className="mx-auto max-w-3xl">
@@ -389,7 +473,7 @@ export default function BookingHistory() {
       </div>
     );
   }
-  if (state.error) {
+  if (pageError) {
     return (
       <div className="min-h-screen py-8">
         <div className="mx-auto max-w-3xl px-4">
@@ -397,12 +481,16 @@ export default function BookingHistory() {
             <p className="font-bold text-lg mb-2">
               Failed to load booking history
             </p>
-            <p className="text-sm opacity-90">{state.error}</p>
+            <p className="text-sm opacity-90">{pageError}</p>
           </div>
         </div>
       </div>
     );
   }
+
+  const totalCount = usingCancelledDataset
+    ? cancelledState.data?.count ?? rows.length
+    : activeState.data?.count ?? rows.length;
 
   return (
     <div className="min-h-screen py-24">
@@ -418,10 +506,8 @@ export default function BookingHistory() {
               {passengerDisplayName || phone || "—"}
             </span>{" "}
             • Total{" "}
-            <span className="font-semibold text-blue-900">
-              {state.data?.count ?? rows.length}
-            </span>{" "}
-            bookings
+            <span className="font-semibold text-blue-900">{totalCount}</span>{" "}
+            {usingCancelledDataset ? "cancelled bookings" : "bookings"}
           </p>
         </div>
 
@@ -450,7 +536,6 @@ export default function BookingHistory() {
                 className={inputCls + " pl-10 cursor-pointer"}
                 aria-label="Filter by status"
               >
-                <option>All</option>
                 <option>Confirmed</option>
                 <option>Pending</option>
                 <option>Cancelled</option>
@@ -482,10 +567,9 @@ export default function BookingHistory() {
                   "Route",
                   "Bus / Operator",
                   "Seats",
-
                   "Pickup / Drop",
                   "Status",
-                  "Booked At",
+                  usingCancelledDataset ? "Cancelled At" : "Booked At",
                   "Cancellation Reason",
                 ].map((h) => (
                   <th
@@ -495,7 +579,7 @@ export default function BookingHistory() {
                     {h}
                   </th>
                 ))}
-                {anyCancellable && (
+                {!usingCancelledDataset && anyCancellable && (
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Actions
                   </th>
@@ -509,6 +593,7 @@ export default function BookingHistory() {
                   b?.bus?.schedule?.departure ||
                   b?.bus?.departureTime ||
                   "00:00";
+                const cancelledAt = b?._cancelMeta?.processedAt;
                 return (
                   <tr
                     key={b._id}
@@ -516,12 +601,12 @@ export default function BookingHistory() {
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="font-semibold text-gray-900">
-                        {b.travelDate}
+                        {b.travelDate || "—"}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-semibold text-gray-900">
-                        {b?.bus?.from || "—"} → {b?.bus?.to || "—"}
+                        {b?.bus?.route.from || "—"} → {b?.bus?.route.to || "—"}
                       </div>
                       {departTime && (
                         <div className="text-sm text-gray-700 mt-1">
@@ -531,7 +616,7 @@ export default function BookingHistory() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-semibold text-gray-900">
-                        {b?.bus?.operatorName || "—"}
+                        {b?.bus?.busName || "—"}
                       </div>
                       <div className="text-sm text-gray-700">
                         {b?.bus?.plateNo || b?.bus?.busNo || ""}
@@ -544,7 +629,6 @@ export default function BookingHistory() {
                           : "—"}
                       </div>
                     </td>
-
                     <td className="px-6 py-4">
                       <div className="text-gray-900">
                         <div className="font-semibold">{b?.pickup || "—"}</div>
@@ -563,28 +647,48 @@ export default function BookingHistory() {
                             : "gray"
                         }
                       >
-                        {b?.status || "—"}
+                        {b?.status ||
+                          (usingCancelledDataset ? "Cancelled" : "—")}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-800">
-                      {new Date(b.createdAt).toLocaleString()}
+                      {new Date(
+                        usingCancelledDataset ? cancelledAt : b.createdAt
+                      ).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-800">
-                      {b?.status === "Cancelled"
+                      {usingCancelledDataset
+                        ? b?.reason || "No reason provided"
+                        : b?.status === "Cancelled"
                         ? b?.reason ||
                           b?.cancellationReason ||
                           b?.cancelReason ||
                           "No reason provided"
                         : "Booking confirmed — no cancellation reason"}
+                      {usingCancelledDataset && b?._cancelMeta && (
+                        <div className="mt-1 text-xs text-gray-700">
+                          Refund:{" "}
+                          <span className="font-semibold">
+                            {b._cancelMeta.refundPercent}%
+                          </span>{" "}
+                          • Amount:{" "}
+                          <span className="font-semibold">
+                            {b._cancelMeta.refundedAmount}
+                          </span>
+                        </div>
+                      )}
                     </td>
-                    {anyCancellable && (
+                    {!usingCancelledDataset && anyCancellable && (
                       <td className="px-6 py-4">
                         {b?.status === "Cancelled" ? (
                           <span className="text-sm text-gray-600 font-semibold">
                             Cancelled
                           </span>
                         ) : (
-                          <CancelCell booking={b} onCancelled={reload} />
+                          <CancelCell
+                            booking={b}
+                            onCancelled={refreshCurrent}
+                          />
                         )}
                       </td>
                     )}
@@ -594,7 +698,7 @@ export default function BookingHistory() {
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={anyCancellable ? 10 : 9}
+                    colSpan={!usingCancelledDataset && anyCancellable ? 10 : 9}
                     className="px-6 py-12 text-center"
                   >
                     <div className="text-gray-600 text-lg font-semibold">
@@ -620,111 +724,138 @@ export default function BookingHistory() {
               <p className="text-gray-500">Try adjusting your filters</p>
             </div>
           )}
-          {rows.map((b) => (
-            <div
-              key={b._id}
-              className="rounded-xl border border-gray-200 p-6 shadow-sm transition-all duration-200 hover:shadow-md"
-            >
-              <div className="space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-bold text-gray-900 text-lg tracking-tight">
-                      {b?.bus?.from || "—"} → {b?.bus?.to || "—"}
-                    </h3>
-                    <p className="text-gray-700 text-sm mt-1">{b.travelDate}</p>
+          {rows.map((b) => {
+            const cancelledAt = b?._cancelMeta?.processedAt;
+            return (
+              <div
+                key={b._id}
+                className="rounded-xl border border-gray-200 p-6 shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                <div className="space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-lg tracking-tight">
+                        {b?.bus?.from || "—"} → {b?.bus?.to || "—"}
+                      </h3>
+                      <p className="text-gray-700 text-sm mt-1">
+                        {b.travelDate || "—"}
+                      </p>
+                    </div>
+                    <Badge
+                      tone={
+                        b?.status === "Confirmed"
+                          ? "green"
+                          : b?.status === "Cancelled"
+                          ? "red"
+                          : "gray"
+                      }
+                    >
+                      {b?.status || (usingCancelledDataset ? "Cancelled" : "—")}
+                    </Badge>
                   </div>
-                  <Badge
-                    tone={
-                      b?.status === "Confirmed"
-                        ? "green"
-                        : b?.status === "Cancelled"
-                        ? "red"
-                        : "gray"
-                    }
-                  >
-                    {b?.status || "—"}
-                  </Badge>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-semibold text-gray-800">
-                      Operator:
-                    </span>
-                    <p className="text-gray-900">
-                      {b?.bus?.operatorName || "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-800">
-                      Departure:
-                    </span>
-                    <p className="text-gray-900">
-                      {b?.departureTime ||
-                        b?.bus?.schedule?.departure ||
-                        b?.bus?.departureTime ||
-                        "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-800">Seats:</span>
-                    <p className="text-gray-900">
-                      {Array.isArray(b.seats) && b.seats.length > 0
-                        ? b.seats.map((s) => s?.number ?? s).join(", ")
-                        : "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-800">
-                      NIC / Passport:
-                    </span>
-                    <p className="text-gray-900">{b?.passenger?.nic || "—"}</p>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-800">Booked:</span>
-                    <p className="text-gray-900">
-                      {new Date(b.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-200 pt-4">
-                  <div className="flex justify-between items-center text-sm">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="font-semibold text-gray-800">
-                        Pickup:
+                        Operator:
                       </span>
-                      <p className="text-gray-900">{b?.pickup || "—"}</p>
+                      <p className="text-gray-900">
+                        {b?.bus?.operatorName || "—"}
+                      </p>
                     </div>
                     <div>
-                      <span className="font-semibold text-gray-800">Drop:</span>
-                      <p className="text-gray-900">{b?.drop || "—"}</p>
+                      <span className="font-semibold text-gray-800">
+                        Departure:
+                      </span>
+                      <p className="text-gray-900">
+                        {b?.departureTime ||
+                          b?.bus?.schedule?.departure ||
+                          b?.bus?.departureTime ||
+                          "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-800">
+                        Seats:
+                      </span>
+                      <p className="text-gray-900">
+                        {Array.isArray(b.seats) && b.seats.length > 0
+                          ? b.seats.map((s) => s?.number ?? s).join(", ")
+                          : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-800">
+                        NIC / Passport:
+                      </span>
+                      <p className="text-gray-900">
+                        {b?.passenger?.nic || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-800">
+                        {usingCancelledDataset ? "Cancelled:" : "Booked:"}
+                      </span>
+                      <p className="text-gray-900">
+                        {new Date(
+                          usingCancelledDataset ? cancelledAt : b.createdAt
+                        ).toLocaleDateString()}
+                      </p>
                     </div>
                   </div>
+
+                  <div className="border-t border-gray-200 pt-4">
+                    <div className="flex justify-between items-center text-sm">
+                      <div>
+                        <span className="font-semibold text-gray-800">
+                          Pickup:
+                        </span>
+                        <p className="text-gray-900">{b?.pickup || "—"}</p>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-800">
+                          Drop:
+                        </span>
+                        <p className="text-gray-900">{b?.drop || "—"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(usingCancelledDataset || b?.status === "Cancelled") && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <span className="font-semibold text-gray-800 text-sm">
+                        Cancellation Reason:
+                      </span>
+                      <p className="text-gray-900 text-sm mt-1">
+                        {b?.reason ||
+                          b?.cancellationReason ||
+                          b?.cancelReason ||
+                          "No reason provided"}
+                      </p>
+                      {usingCancelledDataset && b?._cancelMeta && (
+                        <p className="text-gray-700 text-xs mt-1">
+                          Refund:{" "}
+                          <span className="font-semibold">
+                            {b._cancelMeta.refundPercent}%
+                          </span>{" "}
+                          • Amount:{" "}
+                          <span className="font-semibold">
+                            {b._cancelMeta.refundedAmount}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!usingCancelledDataset && b?.status !== "Cancelled" && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <CancelCell booking={b} onCancelled={refreshCurrent} />
+                    </div>
+                  )}
                 </div>
-
-                {b?.status === "Cancelled" && (
-                  <div className="border-t border-gray-200 pt-4">
-                    <span className="font-semibold text-gray-800 text-sm">
-                      Cancellation Reason:
-                    </span>
-                    <p className="text-gray-900 text-sm mt-1">
-                      {b?.reason ||
-                        b?.cancellationReason ||
-                        b?.cancelReason ||
-                        "No reason provided"}
-                    </p>
-                  </div>
-                )}
-
-                {b?.status !== "Cancelled" && (
-                  <div className="border-t border-gray-200 pt-4">
-                    <CancelCell booking={b} onCancelled={reload} />
-                  </div>
-                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

@@ -206,7 +206,7 @@ export default function Navbar() {
                 />
               </div>
               <span className="text-2xl font-bold text-blue-900">
-                Leoforeio
+                BookMyBus
               </span>
             </Link>
           </motion.div>

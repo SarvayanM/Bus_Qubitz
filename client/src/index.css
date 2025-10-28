@@ -68,3 +68,78 @@ select {
   -moz-appearance: none;
   background-image: none;
 }
+
+@keyframes flyInFromTop {
+  0% {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes flyInFromBottom {
+  0% {
+    opacity: 0;
+    transform: translateY(50px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes flyInFromLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-50px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+@keyframes flyInFromRight {
+  0% {
+    opacity: 0;
+    transform: translateX(50px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* initial hidden state */
+.animate-fly-in-from-top,
+.animate-fly-in-from-bottom,
+.animate-fly-in-from-left,
+.animate-fly-in-from-right {
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+/* animate only while .in-view is present */
+.in-view.animate-fly-in-from-top {
+  animation: flyInFromTop 0.8s ease-out forwards;
+}
+.in-view.animate-fly-in-from-bottom {
+  animation: flyInFromBottom 0.8s ease-out forwards;
+}
+.in-view.animate-fly-in-from-left {
+  animation: flyInFromLeft 0.8s ease-out forwards;
+}
+.in-view.animate-fly-in-from-right {
+  animation: flyInFromRight 0.8s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fly-in-from-top,
+  .animate-fly-in-from-bottom,
+  .animate-fly-in-from-left,
+  .animate-fly-in-from-right {
+    opacity: 1 !important;
+    animation: none !important;
+    transform: none !important;
+  }
+}

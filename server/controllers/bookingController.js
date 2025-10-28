@@ -1,9 +1,14 @@
 import Booking from "../models/Booking.js";
 import Bus from "../models/Bus.js";
 import Passenger from "../models/Passenger.js";
-import CancelBooking from "../models/CancelBooking.js";
+import CancelledBooking from "../models/CancelledBooking.js";
 // import { toDepartureDate, refundPercent } from "../utils/cancelHelpers.js";
-import { toDepartureDate, refundPercent, parseMoneyToNumber, safeSeatsCount } from "../utils/serverTime.js";
+import {
+  toDepartureDate,
+  refundPercent,
+  parseMoneyToNumber,
+  safeSeatsCount,
+} from "../utils/serverTime.js";
 import mongoose from "mongoose";
 
 // minimal model shown below (if needed)
@@ -630,7 +635,6 @@ export async function getHistory(req, res) {
   }
 }
 
-
 /**
  * Cancel a booking:
  * - Validate window by travelDate + (bus.schedule.departure || bus.departureTime || booking.departureTime)
@@ -642,14 +646,24 @@ export async function getHistory(req, res) {
  */
 // helpers you can keep in a util file
 
-
-
-
 /** Example refund policy:
  * returns percent in 0..100, or -1 if not refundable.
  * Keep your existing implementation; shown here for clarity.
  */
 
+// safe nested getter helper
+function get(obj, path, fallback = undefined) {
+  try {
+    return (
+      path
+        .split(".")
+        .reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), obj) ??
+      fallback
+    );
+  } catch {
+    return fallback;
+  }
+}
 
 export async function cancelBooking(req, res) {
   try {
@@ -662,7 +676,8 @@ export async function cancelBooking(req, res) {
 
     const booking = await Booking.findById(id).populate({
       path: "busId",
-      select: "price schedule departure busNo busName route",
+      select:
+        "price schedule departure busNo busName route operatorName plateNo from to",
     });
 
     if (!booking) return res.status(404).json({ message: "Booking not found" });
@@ -670,22 +685,21 @@ export async function cancelBooking(req, res) {
       return res.status(400).json({ message: "Already cancelled" });
     }
 
-    const passengerPhone = booking?.passenger?.phone;
+    const passengerPhone = get(booking, "passenger.phone", "");
     if (!passengerPhone) {
       return res.status(400).json({ message: "No passenger phone on booking" });
     }
-
     if (!booking.travelDate) {
       return res.status(500).json({ message: "Booking travelDate missing" });
     }
 
-    // ---- departure time & refund percent ----
+    // ---- refund window calc ----
     const busDoc = booking.busId;
     const departTime =
       booking.departureTime ||
-      booking.bus?.departureTime ||
-      busDoc?.schedule?.departure ||
-      busDoc?.departure ||
+      get(booking, "bus.departureTime") ||
+      get(busDoc, "schedule.departure") ||
+      get(busDoc, "departure") ||
       "00:00";
 
     const departAt = toDepartureDate(booking.travelDate, departTime);
@@ -698,15 +712,9 @@ export async function cancelBooking(req, res) {
         .json({ message: "Cancellation window has passed (< 4 hours)" });
     }
 
-    // ---- determine base price confidently ----
-    // Prefer a booking-level total if you have one (uncomment if available):
-    // const bookingTotal = parseMoneyToNumber(booking.totalAmount);
-    // if (!Number.isNaN(bookingTotal) && bookingTotal > 0) { ... }
-
-    // Otherwise, use bus.price * seatsCount
-    const rawBusPrice = busDoc?.price;
+    // ---- price & refund calc ----
+    const rawBusPrice = get(busDoc, "price", get(booking, "bus.price"));
     const busPrice = parseMoneyToNumber(rawBusPrice);
-
     if (Number.isNaN(busPrice) || busPrice <= 0) {
       return res.status(400).json({
         message:
@@ -717,7 +725,6 @@ export async function cancelBooking(req, res) {
 
     const seatsCount = safeSeatsCount(booking.seats);
     const baseAmount = busPrice * seatsCount;
-
     if (!isFinite(baseAmount) || baseAmount <= 0) {
       return res.status(400).json({
         message: "Computed base amount is invalid.",
@@ -725,13 +732,7 @@ export async function cancelBooking(req, res) {
       });
     }
 
-    // ---- compute refund (percent is 0..100) ----
-    const refundedAmount = Math.max(
-      0,
-      Math.round((baseAmount * pct) / 100)
-    );
-
-    // Extra guard against NaN
+    const refundedAmount = Math.max(0, Math.round((baseAmount * pct) / 100));
     if (!isFinite(refundedAmount)) {
       return res.status(400).json({
         message: "Refund amount calculation failed.",
@@ -744,38 +745,108 @@ export async function cancelBooking(req, res) {
     if (!passenger) {
       return res.status(404).json({ message: "Passenger not found" });
     }
-
     const currentWallet = parseMoneyToNumber(passenger.walletBalance);
     const safeWallet = Number.isNaN(currentWallet) ? 0 : currentWallet;
-
     passenger.walletBalance = safeWallet + refundedAmount;
     await passenger.save();
 
-    // ---- record cancellation ----
-    await CancelBooking.create({
-      bookingId: booking._id,
+    // ---- BUILD BOOKING SNAPSHOT (MUST NOT BE UNDEFINED) ----
+    const bookingSnapshot = {
+      travelDate: booking.travelDate || null,
+      departureTime:
+        booking.departureTime || get(booking, "bus.schedule.departure") || null,
+      seats: Array.isArray(booking.seats)
+        ? booking.seats.map((s) => (typeof s === "object" ? { ...s } : s))
+        : [],
+      pickup: booking.pickup || null,
+      drop: booking.drop || null,
+      payment: booking.payment || null,
+      createdAt: booking.createdAt || new Date(),
+      status: "Cancelled",
+
+      passenger: {
+        fname: get(booking, "passenger.fname", null),
+        lname: get(booking, "passenger.lname", null),
+        phone: passengerPhone,
+        nic: get(booking, "passenger.nic", null),
+        email: get(booking, "passenger.email", null),
+      },
+
+      bus: {
+        from: get(booking, "bus.from", get(busDoc, "from", null)),
+        to: get(booking, "bus.to", get(busDoc, "to", null)),
+        operatorName: get(
+          booking,
+          "bus.operatorName",
+          get(busDoc, "operatorName", null)
+        ),
+        plateNo: get(booking, "bus.plateNo", get(busDoc, "plateNo", null)),
+        busNo: get(booking, "bus.busNo", get(busDoc, "busNo", null)),
+        busName: get(booking, "bus.busName", get(busDoc, "busName", null)),
+        price: get(busDoc, "price", get(booking, "bus.price", null)),
+        route: {
+          from: get(busDoc, "route.from", get(booking, "bus.route.from", null)),
+          to: get(busDoc, "route.to", get(booking, "bus.route.to", null)),
+        },
+        schedule: {
+          departure: get(
+            busDoc,
+            "schedule.departure",
+            get(booking, "bus.schedule.departure", null)
+          ),
+        },
+        departureTime: get(booking, "bus.departureTime", null),
+      },
+    };
+
+    // ---- HARD GUARD: snapshot must exist ----
+    if (
+      !bookingSnapshot ||
+      typeof bookingSnapshot !== "object" ||
+      !bookingSnapshot.passenger ||
+      !bookingSnapshot.bus
+    ) {
+      console.error("cancelBooking: invalid bookingSnapshot", {
+        id,
+        reason,
+        preview: {
+          travelDate: bookingSnapshot?.travelDate,
+          passengerPhone,
+          busFrom: bookingSnapshot?.bus?.from,
+          busTo: bookingSnapshot?.bus?.to,
+        },
+      });
+      return res
+        .status(500)
+        .json({ message: "Internal error: booking snapshot failed" });
+    }
+
+    // ---- PERSIST CANCELLED SNAPSHOT ----
+    const cancelledDoc = await CancelledBooking.create({
       passengerPhone,
       reason,
       refundPercent: pct,
       refundedAmount,
+      processedAt: new Date(),
+      booking: bookingSnapshot, // <-- REQUIRED SUBDOC
       meta: {
         travelDate: booking.travelDate,
         departTime,
-        busId: busDoc?._id,
+        busId: get(booking, "busId._id"),
         busPrice,
         seatsCount,
         baseAmount,
       },
     });
 
-    // ---- remove booking ----
+    // ---- delete live booking ----
     await booking.deleteOne();
 
     return res.json({
       refundedAmount,
       refundPercent: pct,
       walletBalance: passenger.walletBalance,
-      removedBookingId: id,
+      cancelledId: cancelledDoc._id,
       debug: {
         seatsCount,
         baseAmount,
@@ -788,4 +859,3 @@ export async function cancelBooking(req, res) {
     return res.status(500).json({ message: "Internal server error" });
   }
 }
-

@@ -550,57 +550,6 @@ export default function SelectedBusDetails({ userName = "" }) {
             </form>
           </div>
 
-          {/* Search Summary */}
-          <div className="flex flex-wrap justify-center gap-4 mb-8">
-            <div className="rounded-xl border border-gray-200 bg-white px-6 py-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="p-2 rounded-lg bg-blue-50">
-                  <MapPin className="w-5 h-5 text-blue-900" />
-                </span>
-                <div className="text-left">
-                  <p className="text-xs text-gray-500 font-medium leading-none mb-1">
-                    From
-                  </p>
-                  <p className="text-lg font-bold text-gray-900">
-                    {qFrom || "-"}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white px-6 py-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="p-2 rounded-lg bg-blue-50">
-                  <MapPin className="w-5 h-5 text-blue-900" />
-                </span>
-                <div className="text-left">
-                  <p className="text-xs text-gray-500 font-medium leading-none mb-1">
-                    To
-                  </p>
-                  <p className="text-lg font-bold text-gray-900">
-                    {qTo || "-"}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white px-6 py-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="p-2 rounded-lg bg-blue-50">
-                  <Calendar className="w-5 h-5 text-blue-900" />
-                </span>
-                <div className="text-left">
-                  <p className="text-xs text-gray-500 font-medium leading-none mb-1">
-                    Travel Date
-                  </p>
-                  <p className="text-lg font-bold text-gray-900">
-                    {formatDate(qDate)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div className="border-t border-gray-200 pt-3">
             <p className="text-gray-600">
               Showing results for your selected route and date
