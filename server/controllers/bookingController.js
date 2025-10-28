@@ -2,8 +2,10 @@ import Booking from "../models/Booking.js";
 import Bus from "../models/Bus.js";
 import Passenger from "../models/Passenger.js";
 import CancelBooking from "../models/CancelBooking.js";
-import { toDepartureDate, refundPercent } from "../utils/cancelHelpers.js";
+// import { toDepartureDate, refundPercent } from "../utils/cancelHelpers.js";
+import { toDepartureDate, refundPercent, parseMoneyToNumber, safeSeatsCount } from "../utils/serverTime.js";
 import mongoose from "mongoose";
+
 // minimal model shown below (if needed)
 
 /**
@@ -148,6 +150,8 @@ export async function createBooking(req, res) {
                   phone,
                   fname: passenger.fname || "",
                   lname: passenger.lname || "",
+                  nic: passenger.nic || "",
+                  email: passenger.email || "",
                 },
               ],
               { session }
@@ -200,6 +204,8 @@ export async function createBooking(req, res) {
                 fname: passenger.fname || "",
                 lname: passenger.lname || "",
                 phone,
+                nic: passenger.nic || "",
+                email: passenger.email || "",
               },
               pickup,
               drop,
@@ -223,6 +229,8 @@ export async function createBooking(req, res) {
                 phone,
                 fname: passenger.fname || "",
                 lname: passenger.lname || "",
+                nic: passenger.nic || "",
+                email: passenger.email || "",
               },
             },
             { upsert: true, new: true }
@@ -266,6 +274,8 @@ export async function createBooking(req, res) {
             fname: passenger.fname || "",
             lname: passenger.lname || "",
             phone,
+            nic: passenger.nic || "",
+            email: passenger.email || "",
           },
           pickup,
           drop,
@@ -620,69 +630,162 @@ export async function getHistory(req, res) {
   }
 }
 
+
+/**
+ * Cancel a booking:
+ * - Validate window by travelDate + (bus.schedule.departure || bus.departureTime || booking.departureTime)
+ * - Refund % by hours left
+ * - Base amount from bus.price (× seats count)
+ * - Credit wallet
+ * - Record CancelBooking
+ * - Remove booking from DB
+ */
+// helpers you can keep in a util file
+
+
+
+
+/** Example refund policy:
+ * returns percent in 0..100, or -1 if not refundable.
+ * Keep your existing implementation; shown here for clarity.
+ */
+
+
 export async function cancelBooking(req, res) {
   try {
     const { id } = req.params;
     const { reason } = req.body;
 
-    if (!reason) return res.status(400).json({ message: "reason is required" });
+    if (!reason) {
+      return res.status(400).json({ message: "reason is required" });
+    }
 
-    const booking = await Booking.findById(id);
+    const booking = await Booking.findById(id).populate({
+      path: "busId",
+      select: "price schedule departure busNo busName route",
+    });
+
     if (!booking) return res.status(404).json({ message: "Booking not found" });
-    if (booking.status === "Cancelled")
+    if (booking.status === "Cancelled") {
       return res.status(400).json({ message: "Already cancelled" });
+    }
 
     const passengerPhone = booking?.passenger?.phone;
-    if (!passengerPhone)
+    if (!passengerPhone) {
       return res.status(400).json({ message: "No passenger phone on booking" });
+    }
 
-    // Authorization check (optional but recommended): if you have auth middleware, compare req.user.phone === passengerPhone
+    if (!booking.travelDate) {
+      return res.status(500).json({ message: "Booking travelDate missing" });
+    }
 
-    const travelDate = booking.travelDate; // "YYYY-MM-DD"
-    const departTime = booking?.bus?.departureTime || "00:00";
-    const departAt = toDepartureDate(travelDate, departTime);
+    // ---- departure time & refund percent ----
+    const busDoc = booking.busId;
+    const departTime =
+      booking.departureTime ||
+      booking.bus?.departureTime ||
+      busDoc?.schedule?.departure ||
+      busDoc?.departure ||
+      "00:00";
+
+    const departAt = toDepartureDate(booking.travelDate, departTime);
     const hoursBefore = (departAt.getTime() - Date.now()) / 3600000;
-
     const pct = refundPercent(hoursBefore);
+
     if (pct < 0) {
       return res
         .status(400)
         .json({ message: "Cancellation window has passed (< 4 hours)" });
     }
 
-    const totalAmount = Number(booking.total || booking.amount || 0);
-    const refundedAmount = Math.max(0, Math.round((totalAmount * pct) / 100));
+    // ---- determine base price confidently ----
+    // Prefer a booking-level total if you have one (uncomment if available):
+    // const bookingTotal = parseMoneyToNumber(booking.totalAmount);
+    // if (!Number.isNaN(bookingTotal) && bookingTotal > 0) { ... }
 
-    // 1) mark booking as cancelled
-    booking.status = "Cancelled";
-    booking.cancelledAt = new Date();
-    await booking.save();
+    // Otherwise, use bus.price * seatsCount
+    const rawBusPrice = busDoc?.price;
+    const busPrice = parseMoneyToNumber(rawBusPrice);
 
-    // 2) refund to wallet
+    if (Number.isNaN(busPrice) || busPrice <= 0) {
+      return res.status(400).json({
+        message:
+          "Bus price is invalid or missing; cannot compute refund for cancellation.",
+        debug: { rawBusPrice },
+      });
+    }
+
+    const seatsCount = safeSeatsCount(booking.seats);
+    const baseAmount = busPrice * seatsCount;
+
+    if (!isFinite(baseAmount) || baseAmount <= 0) {
+      return res.status(400).json({
+        message: "Computed base amount is invalid.",
+        debug: { busPrice, seatsCount, baseAmount },
+      });
+    }
+
+    // ---- compute refund (percent is 0..100) ----
+    const refundedAmount = Math.max(
+      0,
+      Math.round((baseAmount * pct) / 100)
+    );
+
+    // Extra guard against NaN
+    if (!isFinite(refundedAmount)) {
+      return res.status(400).json({
+        message: "Refund amount calculation failed.",
+        debug: { baseAmount, pct, refundedAmount },
+      });
+    }
+
+    // ---- credit wallet ----
     const passenger = await Passenger.findOne({ phone: passengerPhone });
-    if (!passenger)
+    if (!passenger) {
       return res.status(404).json({ message: "Passenger not found" });
-    passenger.walletBalance =
-      Number(passenger.walletBalance || 0) + refundedAmount;
+    }
+
+    const currentWallet = parseMoneyToNumber(passenger.walletBalance);
+    const safeWallet = Number.isNaN(currentWallet) ? 0 : currentWallet;
+
+    passenger.walletBalance = safeWallet + refundedAmount;
     await passenger.save();
 
-    // 3) record cancel entry
+    // ---- record cancellation ----
     await CancelBooking.create({
       bookingId: booking._id,
       passengerPhone,
       reason,
       refundPercent: pct,
       refundedAmount,
-      meta: { travelDate, departTime },
+      meta: {
+        travelDate: booking.travelDate,
+        departTime,
+        busId: busDoc?._id,
+        busPrice,
+        seatsCount,
+        baseAmount,
+      },
     });
+
+    // ---- remove booking ----
+    await booking.deleteOne();
 
     return res.json({
       refundedAmount,
       refundPercent: pct,
       walletBalance: passenger.walletBalance,
-      booking,
+      removedBookingId: id,
+      debug: {
+        seatsCount,
+        baseAmount,
+        busPriceUsed: busPrice,
+        percentApplied: pct,
+      },
     });
   } catch (e) {
-    return res.status(500).json({ message: e.message });
+    console.error("cancelBooking error:", e);
+    return res.status(500).json({ message: "Internal server error" });
   }
 }
+

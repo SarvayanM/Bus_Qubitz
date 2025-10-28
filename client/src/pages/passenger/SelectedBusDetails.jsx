@@ -31,6 +31,16 @@ function todayISO() {
   return `${y}-${m}-${d}`;
 }
 
+function tomorrowISO() {
+  const t = new Date();
+  t.setDate(t.getDate() + 1);
+  t.setHours(0, 0, 0, 0);
+  const y = t.getFullYear();
+  const m = String(t.getMonth() + 1).padStart(2, "0");
+  const d = String(t.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /* ----------------------------- Small utilities ----------------------------- */
 const formatDate = (dateString) => {
   if (!dateString) return "-";
@@ -385,7 +395,14 @@ export default function SelectedBusDetails({ userName = "" }) {
   // NEW: booking handler for default list (where date may be undefined)
   const handleDefaultBook = (busObj) => {
     const bus = normalizeJourneyToBus(busObj);
-    const dateToUse = qDate || todayISO();
+    // Decide whether booking should be for today or tomorrow based on departure
+    const dep = bus?.schedule?.departure || bus?.departure || "";
+    const depMin = parseTimeFlexible(dep);
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const canBookToday = depMin != null ? depMin - nowMin >= 60 : false;
+    const dateToUse = qDate || (canBookToday ? todayISO() : tomorrowISO());
+
     navigate(
       `/busBookingDashboard?busId=${encodeURIComponent(
         bus._id

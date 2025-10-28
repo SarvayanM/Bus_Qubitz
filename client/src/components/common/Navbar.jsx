@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useCallback } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   FaHome,
@@ -51,37 +51,78 @@ export default function Navbar() {
     },
   ];
 
-  // Fetch passenger name if logged-in passenger
-  useEffect(() => {
+  // --- Extracted: fetch profile (same logic), so we can reuse it on multiple triggers
+  const fetchAndSetProfile = useCallback(async () => {
+    setPassengerName("");
+    setPassengerFirstName("");
+    const phone = Cookies.get("phone");
+    if (!userRole || userRole !== "passenger" || !phone) return;
+    setLoadingProfile(true);
     let mounted = true;
-    async function loadProfile() {
-      setPassengerName("");
-      setPassengerFirstName("");
-      const phone = Cookies.get("phone");
-      if (!userRole || userRole !== "passenger" || !phone) return;
-      setLoadingProfile(true);
-      try {
-        const p = await getPassengerByPhone(phone);
-        if (mounted && p) {
-          const full =
-            `${p.fname || ""}${p.lname ? " " + p.lname : ""}`.trim() || phone;
-          setPassengerName(full);
-          // Prefer explicit first name; fall back to first token
-          const first =
-            (p.fname && String(p.fname).trim()) || full.split(" ")[0] || "";
-          setPassengerFirstName(first);
-        }
-      } catch (_) {
-        // silent
-      } finally {
-        if (mounted) setLoadingProfile(false);
+    try {
+      const p = await getPassengerByPhone(phone);
+      if (mounted && p) {
+        const full =
+          `${p.fname || ""}${p.lname ? " " + p.lname : ""}`.trim() || phone;
+        setPassengerName(full);
+        const first =
+          (p.fname && String(p.fname).trim()) || full.split(" ")[0] || "";
+        setPassengerFirstName(first);
       }
+    } catch {
+      // silent
+    } finally {
+      if (mounted) setLoadingProfile(false);
     }
-    loadProfile();
     return () => {
       mounted = false;
     };
   }, [userRole]);
+
+  // Initial load (same behavior as before, just using the shared function)
+  useEffect(() => {
+    fetchAndSetProfile();
+  }, [fetchAndSetProfile]);
+
+  // Re-fetch whenever the route changes (e.g., after creating profile / first booking)
+  useEffect(() => {
+    if (userRole === "passenger") {
+      fetchAndSetProfile();
+    }
+  }, [location.pathname, userRole, fetchAndSetProfile]);
+
+  // Re-fetch when tab gains focus or becomes visible (user returns to the app)
+  useEffect(() => {
+    const onFocus = () => {
+      if (userRole === "passenger" && !passengerFirstName) {
+        fetchAndSetProfile();
+      }
+    };
+    const onVisibility = () => {
+      if (
+        document.visibilityState === "visible" &&
+        userRole === "passenger" &&
+        !passengerFirstName
+      ) {
+        fetchAndSetProfile();
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [userRole, passengerFirstName, fetchAndSetProfile]);
+
+  // Gentle polling while first name is missing; auto-stops once found
+  useEffect(() => {
+    if (userRole !== "passenger" || passengerFirstName) return;
+    const id = setInterval(() => {
+      fetchAndSetProfile();
+    }, 20000); // 20s cadence; low overhead
+    return () => clearInterval(id);
+  }, [userRole, passengerFirstName, fetchAndSetProfile]);
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
@@ -127,6 +168,8 @@ export default function Navbar() {
     Cookies.remove("phone_verified");
     localStorage.removeItem("role");
     setUserRole("");
+    setPassengerName("");
+    setPassengerFirstName("");
     closeMobileMenu();
     navigate("/");
   };
@@ -170,27 +213,37 @@ export default function Navbar() {
 
           {/* Center: Desktop Navigation (all other elements) */}
           <nav className="hidden md:flex items-center gap-1 ml-6 flex-1">
-            {navItems.map((item) => (
-              <motion.div
-                key={item.path}
-                whileHover={{ y: -2 }}
-                transition={{ type: "spring", stiffness: 400 }}
-              >
-                <NavLink
-                  to={item.path}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-200 cursor-pointer ${
-                      isActive
-                        ? "bg-blue-900 text-white"
-                        : "text-slate-900 hover:bg-blue-100"
-                    }`
-                  }
+            {(() => {
+              const items = [...navItems];
+              if (userRole === "passenger") {
+                items.push({
+                  path: "/bookingHistory",
+                  label: "Booking History",
+                  icon: <FaInfoCircle className="text-lg" />,
+                });
+              }
+              return items.map((item) => (
+                <motion.div
+                  key={item.path}
+                  whileHover={{ y: -2 }}
+                  transition={{ type: "spring", stiffness: 400 }}
                 >
-                  {item.icon}
-                  <span className="font-semibold">{item.label}</span>
-                </NavLink>
-              </motion.div>
-            ))}
+                  <NavLink
+                    to={item.path}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-200 cursor-pointer ${
+                        isActive
+                          ? "bg-blue-900 text-white"
+                          : "text-slate-900 hover:bg-blue-100"
+                      }`
+                    }
+                  >
+                    {item.icon}
+                    <span className="font-semibold">{item.label}</span>
+                  </NavLink>
+                </motion.div>
+              ));
+            })()}
           </nav>
 
           {/* Right: Passenger first name + profile icon (click to profile) + logout */}
@@ -293,40 +346,50 @@ export default function Navbar() {
             {/* Menu Items */}
             <div className="bg-white px-4 py-6">
               <div className="space-y-2">
-                {navItems.map((item, index) => (
-                  <motion.div
-                    key={item.path}
-                    custom={index}
-                    variants={itemVariants}
-                    initial="closed"
-                    animate="open"
-                  >
-                    <NavLink
-                      to={item.path}
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={({ isActive }) =>
-                        [
-                          "flex items-center gap-3 w-full rounded-xl px-4 py-4 text-base font-semibold border cursor-pointer",
-                          "focus:outline-none focus:ring-2 focus:ring-blue-200",
-                          isActive
-                            ? "bg-blue-900 text-white border-blue-900"
-                            : "bg-white text-slate-900 hover:bg-blue-50 border-slate-200",
-                        ].join(" ")
-                      }
+                {(() => {
+                  const items = [...navItems];
+                  if (userRole === "passenger") {
+                    items.push({
+                      path: "/bookingHistory",
+                      label: "Booking History",
+                      icon: <FaInfoCircle className="text-lg" />,
+                    });
+                  }
+                  return items.map((item, index) => (
+                    <motion.div
+                      key={item.path}
+                      custom={index}
+                      variants={itemVariants}
+                      initial="closed"
+                      animate="open"
                     >
-                      <span
-                        className={`text-lg ${
-                          location.pathname === item.path
-                            ? "opacity-100"
-                            : "opacity-70"
-                        }`}
+                      <NavLink
+                        to={item.path}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={({ isActive }) =>
+                          [
+                            "flex items-center gap-3 w-full rounded-xl px-4 py-4 text-base font-semibold border cursor-pointer",
+                            "focus:outline-none focus:ring-2 focus:ring-blue-200",
+                            isActive
+                              ? "bg-blue-900 text-white border-blue-900"
+                              : "bg-white text-slate-900 hover:bg-blue-50 border-slate-200",
+                          ].join(" ")
+                        }
                       >
-                        {item.icon}
-                      </span>
-                      <span>{item.label}</span>
-                    </NavLink>
-                  </motion.div>
-                ))}
+                        <span
+                          className={`text-lg ${
+                            location.pathname === item.path
+                              ? "opacity-100"
+                              : "opacity-70"
+                          }`}
+                        >
+                          {item.icon}
+                        </span>
+                        <span>{item.label}</span>
+                      </NavLink>
+                    </motion.div>
+                  ));
+                })()}
               </div>
 
               {/* Mobile Auth Area */}

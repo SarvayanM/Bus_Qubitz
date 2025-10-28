@@ -1,8 +1,7 @@
 // frontend/src/pages/UpdateProfile.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Cookies from "js-cookie";
 import toast from "react-hot-toast";
-import BusLoader from "../../components/bus/BusLoader";
 import {
   getPassengerByPhone,
   updatePassengerByPhone,
@@ -15,528 +14,468 @@ import {
   EnvelopeIcon,
   IdentificationIcon,
   WalletIcon,
-  ClockIcon,
   ArrowLeftIcon,
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 
-/* ---------------------- utils ---------------------- */
-const pad2 = (n) => String(n).padStart(2, "0");
-const fmtNow = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(
-    d.getDate()
-  )} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
-
-// Single place to switch routes if your app uses kebab-case vs camelCase
-const BOOKING_HISTORY_PATH = "/bookingHistory"; // change here if needed (e.g., "/booking-history")
+const emptyPassenger = (phone = "") => ({
+  phone: phone || "",
+  fname: "",
+  lname: "",
+  nic: "",
+  email: "",
+  walletBalance: 0,
+});
 
 export default function UpdateProfile() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [isExisting, setIsExisting] = useState(false);
-  const [original, setOriginal] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [exists, setExists] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [form, setForm] = useState(emptyPassenger());
+  const [original, setOriginal] = useState(emptyPassenger());
 
-  // Phone as stored & displayed (must be E.164, e.g. +94123456789)
-  const [displayPhone, setDisplayPhone] = useState("");
-
-  const [form, setForm] = useState({
-    fname: "",
-    lname: "",
-    phone: "", // server-returned (not editable)
-    nic: "",
-    email: "",
-    walletBalance: 0,
-  });
-
-  const [errors, setErrors] = useState({
-    fname: "",
-    lname: "",
-    phone: "",
-    nic: "",
-    email: "",
-    walletBalance: "",
-  });
-
-  /* ---------------------- validators ---------------------- */
-  const validators = {
-    fname: (v) =>
-      !v
-        ? "First name is required."
-        : /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim())
-        ? ""
-        : "Enter a valid first name.",
-    lname: (v) =>
-      !v
-        ? "Last name is required."
-        : /^[A-Za-z][A-Za-z\s'.-]{1,49}$/.test(v.trim())
-        ? ""
-        : "Enter a valid last name.",
-    // Validate E.164 Sri Lanka (+94 + 9 digits)
-    phone: (v) =>
-      !v
-        ? "Phone is required."
-        : /^\+94\d{9}$/.test(v)
-        ? ""
-        : "Phone must start with +94 and have 9 digits after it.",
-    nic: (v) => {
-      if (!v) return "";
-      const s = String(v).trim();
-      const oldNic = /^\d{9}[VXvx]$/;
-      const newNic = /^\d{12}$/;
-      const passport = /^[A-Za-z0-9\-\s]{5,20}$/;
-      return oldNic.test(s) || newNic.test(s) || passport.test(s)
-        ? ""
-        : "Enter a valid NIC or passport number.";
-    },
-    email: (v) =>
-      !v
-        ? ""
-        : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
-        ? ""
-        : "Enter a valid email.",
-    walletBalance: (v) => {
-      if (v === undefined || v === null || v === "") return "";
-      const n = Number(v);
-      return Number.isFinite(n) && n >= 0
-        ? ""
-        : "Enter a valid non-negative amount.";
-    },
-  };
-
-  const handleBlur = (field) => (e) => {
-    const value = e.target.value;
-    const msg = validators[field]?.(value) || "";
-    setErrors((er) => ({ ...er, [field]: msg }));
-  };
-
-  const handleChange = (field) => (e) => {
-    const value = e.target.value;
-    setForm((f) => ({ ...f, [field]: value }));
-    if (errors[field]) setErrors((er) => ({ ...er, [field]: "" }));
-  };
-
-  const hasVisibleErrors = Object.values(errors).some(Boolean);
-  const requiredMissing = !form.fname || !form.lname || !displayPhone;
-  const canSave = !hasVisibleErrors && !requiredMissing;
-
-  /* ---------------------- load identity from cookie ---------------------- */
+  // Read the phone (login cookie) and fetch the passenger
   useEffect(() => {
-    // Canonical cookie is `phone` in E.164; keep a fallback to legacy `phoneNumber`
-    const p = Cookies.get("phone") || Cookies.get("phoneNumber") || "";
-    setDisplayPhone(p);
-    setLastUpdated(fmtNow());
-  }, []);
-
-  /* ---------------------- fetch profile (send +94… to API) ---------------------- */
-  useEffect(() => {
-    if (!displayPhone) {
-      setLoading(false);
-      return;
-    }
-    let mounted = true;
     (async () => {
+      setLoading(true);
       try {
-        // IMPORTANT: send E.164 (+94...) exactly as stored in the cookie
-        const p = await getPassengerByPhone(displayPhone);
-        if (!mounted) return;
-        if (p) {
-          setIsExisting(true);
-          setOriginal(p);
-          setForm({
-            fname: p.fname || "",
-            lname: p.lname || "",
-            phone: p.phone || displayPhone,
-            nic: p.nic || "",
-            email: p.email || "",
-            walletBalance:
-              typeof p.walletBalance === "number" ? p.walletBalance : 0,
-          });
-        } else {
-          setIsExisting(false);
+        const phone = Cookies.get("phone") || "";
+        if (!phone) {
+          toast.error("You're not logged in.");
+          setForm(emptyPassenger(""));
+          setOriginal(emptyPassenger(""));
+          setExists(false);
+          return;
         }
-      } catch (e) {
-        // If your API returns 404 when not found, you can optionally treat it as "new user" here.
-        // For now we surface the message.
-        setErr(
-          e?.response?.data?.message || e?.message || "Failed to load profile"
-        );
+
+        // Always keep phone read-only in state
+        let p = null;
+        try {
+          p = await getPassengerByPhone(phone);
+        } catch {
+          // non-fatal; treat as not found
+        }
+
+        if (p && p.phone) {
+          const normalized = {
+            phone: String(p.phone || phone),
+            fname: String(p.fname || ""),
+            lname: String(p.lname || ""),
+            nic: String(p.nic || ""),
+            email: String(p.email || ""),
+            walletBalance:
+              typeof p.walletBalance === "number"
+                ? p.walletBalance
+                : Number(p.walletBalance || 0),
+          };
+          setForm(normalized);
+          setOriginal(normalized);
+          setExists(true);
+        } else {
+          const base = emptyPassenger(phone);
+          setForm(base);
+          setOriginal(base);
+          setExists(false);
+        }
       } finally {
-        mounted && setLoading(false);
+        setLoading(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
-  }, [displayPhone]);
+  }, []);
 
-  /* ---------------------- submit (send +94… to API) ---------------------- */
-  const onSubmit = async (e) => {
-    e.preventDefault();
+  // Derived "dirty" check
+  const isDirty = useMemo(() => {
+    const sanitize = (v) =>
+      typeof v === "string" ? v.trim() : typeof v === "number" ? v : v ?? "";
+    return (
+      sanitize(form.fname) !== sanitize(original.fname) ||
+      sanitize(form.lname) !== sanitize(original.lname) ||
+      sanitize(form.nic) !== sanitize(original.nic) ||
+      sanitize(form.email) !== sanitize(original.email) ||
+      Number(form.walletBalance) !== Number(original.walletBalance)
+    );
+  }, [form, original]);
 
-    // Validate against the E.164 cookie identity (+94…)
-    const next = {
-      fname: validators.fname(form.fname),
-      lname: validators.lname(form.lname),
-      phone: validators.phone(displayPhone),
-      nic: validators.nic(form.nic),
-      email: validators.email(form.email),
-      walletBalance: validators.walletBalance(form.walletBalance),
-    };
-    setErrors(next);
-    if (Object.values(next).some(Boolean)) return;
+  const onChange = (key, val) => {
+    setForm((f) => ({
+      ...f,
+      [key]: key === "walletBalance" ? (val === "" ? "" : Number(val)) : val,
+    }));
+  };
 
-    try {
-      if (isExisting) {
-        const changed = {};
-        if ((original.fname || "") !== (form.fname || ""))
-          changed.fname = form.fname.trim();
-        if ((original.lname || "") !== (form.lname || ""))
-          changed.lname = form.lname.trim();
-        if ((original.nic || "") !== (form.nic || ""))
-          changed.nic = form.nic || "";
-        if ((original.email || "") !== (form.email || ""))
-          changed.email = form.email || "";
-        const origBal = Number(original.walletBalance || 0);
-        const curBal = Number(form.walletBalance || 0);
-        if (origBal !== curBal) changed.walletBalance = curBal;
+  // -------- Strict validations (without changing submit logic) --------
+  // Rules:
+  // - phone: required (read-only)
+  // - fname, lname: required, letters/spaces/hyphens only, 2–40 chars
+  // - nic: required if provided? (keep optional but strict when present);
+  //        validate Sri Lanka formats: 9 digits + V/X (case-insensitive) OR 12 digits
+  // - email: optional, but if present must be valid
+  // - walletBalance: non-negative number (read-only UI)
+  const validate = () => {
+    const e = {};
+    const nameRe = /^[A-Za-z][A-Za-z\s\-]{1,39}$/; // 2–40 chars, letters/spaces/hyphens
 
-        if (Object.keys(changed).length === 0) {
-          toast("You didn't change anything.");
-          return;
-        }
-console.log(displayPhone);
-        // IMPORTANT: send E.164 with plus
-        const updated = await updatePassengerByPhone(displayPhone, changed);
-        console.log(displayPhone);
-        toast.success("Profile updated successfully!");
-        setOriginal(updated);
-        setForm((f) => ({ ...f, ...changed }));
-        setLastUpdated(fmtNow());
-        setTimeout(() => navigate(BOOKING_HISTORY_PATH), 900);
-      } else {
-        if (!displayPhone) {
-          toast.error("Missing account phone. Cannot create profile.");
-          return;
-        }
-        // IMPORTANT: send E.164 with plus
-        const created = await createPassenger({
-          phone: displayPhone,
-          fname: form.fname.trim(),
-          lname: form.lname.trim(),
-          nic: form.nic || "",
-          email: form.email || "",
-          walletBalance: Number(form.walletBalance || 0),
-        });
-        toast.success("Profile created successfully!");
-        setIsExisting(true);
-        setOriginal(created);
-        setForm((f) => ({ ...f, phone: created.phone || displayPhone }));
-        setLastUpdated(fmtNow());
-        setTimeout(() => navigate("/"), 900);
+    // phone is read-only; assume valid if present
+    if (!form.phone) e.phone = "Phone is required.";
+
+    const fname = (form.fname || "").trim();
+    if (!fname) {
+      e.fname = "First name is required.";
+    } else if (!nameRe.test(fname)) {
+      e.fname =
+        "First name must be 2–40 letters and may include spaces or hyphens.";
+    }
+
+    const lname = (form.lname || "").trim();
+    if (!lname) {
+      e.lname = "Last name is required.";
+    } else if (!nameRe.test(lname)) {
+      e.lname =
+        "Last name must be 2–40 letters and may include spaces or hyphens.";
+    }
+
+    const nic = (form.nic || "").trim();
+    if (nic) {
+      const nicReOld = /^\d{9}[VvXx]$/; // e.g., 123456789V
+      const nicReNew = /^\d{12}$/; // 12 digits
+      if (!nicReOld.test(nic) && !nicReNew.test(nic)) {
+        e.nic = "NIC must be 9 digits followed by V/X or 12 digits.";
       }
-    } catch (e) {
+    }
+
+    const email = (form.email || "").trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      e.email = "Please enter a valid email address.";
+    }
+
+    if (
+      form.walletBalance === "" ||
+      isNaN(Number(form.walletBalance)) ||
+      Number(form.walletBalance) < 0
+    ) {
+      e.walletBalance = "Wallet balance must be a non-negative number.";
+    }
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) {
+      toast.error("Please fix the errors.");
+      return;
+    }
+    if (exists && !isDirty) {
+      toast("You didn't change anything.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        fname: form.fname.trim(),
+        lname: form.lname.trim(),
+        nic: form.nic.trim(),
+        email: form.email.trim(),
+        walletBalance: Number(form.walletBalance),
+      };
+
+      if (exists) {
+        await updatePassengerByPhone(form.phone, payload);
+        toast.success("Profile updated successfully!");
+        setOriginal({ ...form, ...payload });
+      } else {
+        // Create expects phone plus other fields
+        await createPassenger({ phone: form.phone, ...payload });
+        toast.success("Profile created successfully!");
+        setExists(true);
+        setOriginal({ phone: form.phone, ...payload });
+      }
+    } catch (err) {
+      console.error(err);
       toast.error(
-        e?.response?.data?.message ||
-          e?.message ||
-          (isExisting ? "Update failed" : "Create failed")
+        exists ? "Failed to update profile." : "Failed to create profile."
       );
+    } finally {
+      setSaving(false);
     }
   };
 
-  /* ---------------------- UI ---------------------- */
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <BusLoader
-          message="Loading profile..."
-          subtext="Fetching your saved information"
-          height="h-56"
-          className="max-w-md"
-        />
-      </div>
-    );
-  }
-
-  if (err) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="rounded-2xl border border-red-200 bg-white px-8 py-6 shadow-lg max-w-md text-center transition-all duration-300 hover:shadow-xl">
-          <div className="text-red-700 text-lg font-semibold mb-2 flex items-center justify-center gap-2">
-            <div className="h-5 w-5 bg-red-600 rounded-full flex items-center justify-center">
-              <span className="text-white text-xs">!</span>
+      <div className="max-w-2xl mx-auto p-6 animate-fade-in">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-gradient-to-r from-slate-200 to-slate-300 rounded-lg w-1/3 mb-6"></div>
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="space-y-2">
+              <div className="h-4 bg-slate-200 rounded w-1/4"></div>
+              <div className="h-12 bg-slate-200 rounded-lg"></div>
             </div>
-            Error Loading Profile
-          </div>
-          <p className="text-gray-700">{err}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 active:bg-blue-950 transition-colors duration-200 cursor-pointer"
-          >
-            Try Again
-          </button>
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen py-24 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header Section */}
-        <div className="text-center mb-8 animate-fade-in">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2 tracking-tight">
-            Travel Passport
-          </h1>
-          <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto">
-            Manage your personal information and travel preferences
-          </p>
+    <div className="min-h-screen py-20 px-4 sm:px-6 lg:px-8 animate-fade-in">
+      <div className="max-w-2xl mx-auto">
+        {/* Top Bar */}
+        <div className="mb-6 flex items-center justify-between">
+          <div className="text-xs text-gray-500" aria-live="polite">
+            {exists ? "Existing profile" : "New profile"}
+          </div>
+        </div>
 
-          {/* Status Bar */}
-          <div className="mt-6 bg-white rounded-2xl p-4 shadow-sm border border-gray-200 max-w-md mx-auto">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2 text-gray-700">
-                <ClockIcon className="h-4 w-4 text-blue-900" />
-                <span>Last loaded: {lastUpdated}</span>
+        {/* Header Section */}
+        <div className="text-center mb-8 animate-slide-down">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">
+            {exists
+              ? "View / Update Your Profile Passport"
+              : "Complete Your Profile Passport"}
+          </h1>
+          <p className="text-gray-600 text-base sm:text-lg">
+            {exists
+              ? "Manage your personal information and preferences."
+              : "Let's get you set up with your passenger profile."}
+          </p>
+        </div>
+
+        {/* Card */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-2xl">
+          <div className="p-6 sm:p-8 space-y-6">
+            {/* Phone (read-only) */}
+            <Field
+              label="Phone Number"
+              icon={<PhoneIcon className="w-5 h-5" />}
+              error={errors.phone}
+            >
+              <div className="relative group">
+                <input
+                  type="text"
+                  value={form.phone}
+                  readOnly
+                  aria-readonly="true"
+                  className="w-full rounded-xl border-2 border-gray-200 bg-gray-100 px-4 py-3 text-gray-700 font-medium outline-none transition-all duration-200 focus:border-blue-900 cursor-not-allowed"
+                  title="This field is read-only"
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-medium">
+                    Verified
+                  </span>
+                </div>
               </div>
+            </Field>
+
+            {/* Name Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* First Name */}
+              <Field
+                label="First Name"
+                icon={<UserIcon className="w-5 h-5" />}
+                error={errors.fname}
+                helper="2–40 letters; spaces and hyphens allowed"
+              >
+                <input
+                  type="text"
+                  value={form.fname}
+                  onChange={(e) => onChange("fname", e.target.value)}
+                  placeholder="John"
+                  className={`w-full rounded-xl border-2 px-4 py-3 outline-none transition-all duration-200 hover:border-gray-300 focus:border-blue-900 ${
+                    errors.fname
+                      ? "border-red-300 focus:border-red-500"
+                      : "border-gray-200"
+                  }`}
+                />
+              </Field>
+
+              {/* Last Name */}
+              <Field
+                label="Last Name"
+                icon={<UserIcon className="w-5 h-5" />}
+                error={errors.lname}
+                helper="2–40 letters; spaces and hyphens allowed"
+              >
+                <input
+                  type="text"
+                  value={form.lname}
+                  onChange={(e) => onChange("lname", e.target.value)}
+                  placeholder="Doe"
+                  className={`w-full rounded-xl border-2 px-4 py-3 outline-none transition-all duration-200 hover:border-gray-300 focus:border-blue-900 ${
+                    errors.lname
+                      ? "border-red-300 focus:border-red-500"
+                      : "border-gray-200"
+                  }`}
+                />
+              </Field>
+            </div>
+
+            {/* NIC */}
+            <Field
+              label="National ID (NIC)"
+              icon={<IdentificationIcon className="w-5 h-5" />}
+              error={errors.nic}
+              helper="Format: 123456789V / 123456789X or 12 digits"
+            >
+              <input
+                type="text"
+                value={form.nic}
+                onChange={(e) => onChange("nic", e.target.value)}
+                placeholder="123456789V"
+                className={`w-full rounded-xl border-2 px-4 py-3 outline-none transition-all duration-200 hover:border-gray-300 focus:border-blue-900 ${
+                  errors.nic
+                    ? "border-red-300 focus:border-red-500"
+                    : "border-gray-200"
+                }`}
+              />
+            </Field>
+
+            {/* Email */}
+            <Field
+              label="Email Address"
+              icon={<EnvelopeIcon className="w-5 h-5" />}
+              error={errors.email}
+              helper="We'll never share your email"
+            >
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => onChange("email", e.target.value)}
+                placeholder="john.doe@example.com"
+                className={`w-full rounded-xl border-2 px-4 py-3 outline-none transition-all duration-200 hover:border-gray-300 focus:border-blue-900 ${
+                  errors.email
+                    ? "border-red-300 focus:border-red-500"
+                    : "border-gray-200"
+                }`}
+              />
+            </Field>
+
+            {/* Wallet Balance (read-only) */}
+            <Field
+              label="Wallet Balance"
+              icon={<WalletIcon className="w-5 h-5" />}
+              error={errors.walletBalance}
+              helper="Managed by the system"
+            >
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 font-medium">
+                  LKR
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  value={form.walletBalance}
+                  readOnly
+                  aria-readonly="true"
+                  title="This field is read-only"
+                  className="w-full rounded-xl border-2 pl-16 pr-4 py-3 outline-none transition-all duration-200 border-gray-200 bg-gray-100 text-gray-700 cursor-not-allowed"
+                />
+              </div>
+            </Field>
+
+            {/* Status & Actions */}
+            <div className="pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3 text-sm">
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    isDirty ? "bg-yellow-400 animate-pulse" : "bg-green-500"
+                  }`}
+                />
+                <span className="text-gray-700 font-medium">
+                  {exists ? (
+                    isDirty ? (
+                      <span className="text-yellow-700">Unsaved changes</span>
+                    ) : (
+                      <span className="text-green-700">All changes saved</span>
+                    )
+                  ) : (
+                    <span className="text-blue-900">New passenger profile</span>
+                  )}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={saving || (exists && !isDirty)}
+                className={`group relative inline-flex items-center gap-3 rounded-xl px-8 py-3 font-semibold text-white transition-all duration-300 overflow-hidden ${
+                  exists && !isDirty
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-blue-900 hover:bg-blue-800 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer"
+                } ${saving ? "opacity-80" : ""}`}
+                aria-busy={saving ? "true" : "false"}
+              >
+                <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition-colors duration-300" />
+                <CheckCircleIcon
+                  className={`w-5 h-5 transition-transform duration-300 ${
+                    saving ? "animate-spin" : "group-hover:scale-110"
+                  }`}
+                />
+                <span className="font-semibold tracking-wide">
+                  {saving
+                    ? "Processing..."
+                    : exists
+                    ? "Update Profile"
+                    : "Create Profile"}
+                </span>
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Main Form Card */}
-        <div className="bg-white rounded-3xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-2xl">
-          <div className="p-6 sm:p-8">
-            <form onSubmit={onSubmit} className="space-y-6">
-              {/* Identity Section */}
-              <section
-                aria-labelledby="identity"
-                className="rounded-2xl p-5 sm:p-6 border border-blue-100 bg-blue-50/50"
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  <PhoneIcon className="h-6 w-6 text-blue-900" />
-                  <h2
-                    id="identity"
-                    className="text-xl font-semibold text-gray-900"
-                  >
-                    Account Identity
-                  </h2>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-800 mb-2">
-                      Primary Phone Number
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        value={displayPhone}
-                        readOnly
-                        className="w-full rounded-xl border border-gray-300 bg-gray-100 px-4 py-3 pl-12 text-gray-700 font-medium transition-all duration-200 cursor-not-allowed"
-                      />
-                      <PhoneIcon className="h-5 w-5 text-gray-500 absolute left-4 top-1/2 -translate-y-1/2" />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Your account is securely linked to this phone number.
-                    </p>
-                  </div>
-                </div>
-              </section>
-
-              {/* Personal Information */}
-              <section
-                aria-labelledby="personal-info"
-                className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200"
-              >
-                <div className="flex items-center gap-3 mb-6">
-                  <UserIcon className="h-6 w-6 text-blue-900" />
-                  <h2
-                    id="personal-info"
-                    className="text-xl font-semibold text-gray-900"
-                  >
-                    Personal Information
-                  </h2>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
-                  <Field
-                    label="First Name"
-                    value={form.fname}
-                    onChange={handleChange("fname")}
-                    onBlur={handleBlur("fname")}
-                    placeholder="e.g., Nimal"
-                    error={errors.fname}
-                    icon={UserIcon}
-                    required
-                  />
-                  <Field
-                    label="Last Name"
-                    value={form.lname}
-                    onChange={handleChange("lname")}
-                    onBlur={handleBlur("lname")}
-                    placeholder="e.g., Perera"
-                    error={errors.lname}
-                    icon={UserIcon}
-                    required
-                  />
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6 mt-6">
-                  <Field
-                    label="Email Address"
-                    value={form.email}
-                    onChange={handleChange("email")}
-                    onBlur={handleBlur("email")}
-                    placeholder="you@example.com"
-                    error={errors.email}
-                    type="email"
-                    icon={EnvelopeIcon}
-                  />
-                  <Field
-                    label="NIC / Passport"
-                    value={form.nic}
-                    onChange={handleChange("nic")}
-                    onBlur={handleBlur("nic")}
-                    placeholder="Enter NIC or passport"
-                    error={errors.nic}
-                    icon={IdentificationIcon}
-                  />
-                </div>
-              </section>
-
-              {/* Wallet Information */}
-              <section
-                aria-labelledby="wallet"
-                className="rounded-2xl p-5 sm:p-6 border border-blue-100 bg-blue-50/50"
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  <WalletIcon className="h-6 w-6 text-blue-900" />
-                  <h2
-                    id="wallet"
-                    className="text-xl font-semibold text-gray-900"
-                  >
-                    Wallet Balance
-                  </h2>
-                </div>
-                <Field
-                  label="Current Balance"
-                  value={form.walletBalance}
-                  onChange={handleChange("walletBalance")}
-                  onBlur={handleBlur("walletBalance")}
-                  placeholder="0"
-                  error={errors.walletBalance}
-                  type="number"
-                  icon={WalletIcon}
-                  readOnly
-                />
-              </section>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 justify-between items-center pt-6 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  className="inline-flex items-center gap-2 px-6 py-3 text-gray-800 bg-white border border-gray-300 rounded-xl font-semibold transition-all duration-200 cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
-                >
-                  <ArrowLeftIcon className="h-5 w-5" />
-                  Back to Dashboard
-                </button>
-
-                <div className="flex gap-4">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 px-6 py-3 text-blue-900 bg-white border border-blue-900 rounded-xl font-semibold transition-all duration-200 cursor-pointer hover:bg-blue-50 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
-                    onClick={() => navigate(BOOKING_HISTORY_PATH)}
-                  >
-                    <ClockIcon className="h-5 w-5" />
-                    Booking History
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={!canSave}
-                    className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-white transition-all duration-200 ${
-                      canSave
-                        ? "bg-blue-900 hover:bg-blue-800 active:bg-blue-950 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
-                        : "bg-gray-400 cursor-not-allowed"
-                    }`}
-                  >
-                    <CheckCircleIcon className="h-5 w-5" />
-                    {isExisting ? "Update Profile" : "Create Profile"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
+        {/* Help Text */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-600">
+            Need help? Contact our support team at{" "}
+            <a
+              href="mailto:support@busbookingsystem.com"
+              className="text-blue-900 hover:text-blue-800 font-semibold underline transition-colors duration-200 cursor-pointer"
+            >
+              support@busbookingsystem.com
+            </a>
+          </p>
         </div>
       </div>
-
-      {/* NOTE: plain <style> tag (no jsx attribute) to avoid the non-boolean 'jsx' warning */}
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in { animation: fade-in 0.6s ease-out; }
-      `}</style>
     </div>
   );
 }
 
-/* ------------------------------ Field Component ------------------------------ */
-function Field({
-  label,
-  value,
-  onChange,
-  onBlur,
-  placeholder,
-  error,
-  type = "text",
-  readOnly = false,
-  icon: Icon,
-  required = false,
-}) {
+/* ------------------------------ UI helpers ------------------------------ */
+function Field({ label, icon, children, error, helper }) {
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-gray-800">
-        {label}
-        {required && <span className="text-red-600 ml-1">*</span>}
+    <div className="space-y-2 animate-rise">
+      <label className="block text-sm font-semibold text-gray-900 tracking-wide">
+        <span className="inline-flex items-center gap-2">
+          <span className="text-blue-900">{icon}</span>
+          {label}
+        </span>
       </label>
-      <div className="relative">
-        {Icon && (
-          <Icon
-            className={`h-5 w-5 absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${
-              error ? "text-red-600" : "text-gray-400"
-            } ${readOnly ? "text-gray-400" : ""}`}
-          />
-        )}
-        <input
-          type={type}
-          value={value ?? ""} // guard undefined/null
-          onChange={onChange}
-          onBlur={onBlur}
-          readOnly={readOnly}
-          placeholder={placeholder}
-          className={`w-full rounded-xl border px-4 py-3 font-medium transition-all duration-200 outline-none ${
-            Icon ? "pl-12" : "pl-4"
-          } ${
-            error
-              ? "border-red-500 focus:border-red-600 focus:ring-2 focus:ring-red-200 bg-red-50"
-              : readOnly
-              ? "border-gray-300 bg-gray-100 text-gray-700 cursor-not-allowed"
-              : "border-gray-300 focus:border-blue-900 focus:ring-2 focus:ring-blue-200 bg-white hover:border-gray-400"
-          }`}
-        />
+      {children}
+      <div className="min-h-[20px]">
+        {helper && !error ? (
+          <p className="text-xs text-gray-500 font-medium">{helper}</p>
+        ) : null}
+        {error ? (
+          <p
+            className="text-xs text-red-600 font-medium flex items-center gap-1 animate-shake"
+            role="alert"
+          >
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+            {error}
+          </p>
+        ) : null}
       </div>
-      {error && (
-        <p className="text-red-700 text-sm flex items-center gap-1">
-          <span className="w-1.5 h-1.5 bg-red-700 rounded-full"></span>
-          {error}
-        </p>
-      )}
     </div>
   );
 }

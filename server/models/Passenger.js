@@ -8,7 +8,7 @@ const PassengerSchema = new mongoose.Schema(
     lname: { type: String, trim: true },
     nic: { type: String, trim: true, default: "" },
     email: { type: String, trim: true, lowercase: true, default: "" },
-   
+
     walletBalance: { type: Number, default: 0 }, // NEW: wallet
   },
   { timestamps: true }

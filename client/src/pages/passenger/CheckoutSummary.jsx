@@ -584,34 +584,36 @@ export default function CheckoutSummary() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-start justify-center pt-20 bg-black/30"
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 px-4"
             onClick={() => closeConfirm(false)}
+            aria-modal="true"
+            role="dialog"
           >
             <motion.div
-              initial={{ y: -12, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -12, opacity: 0 }}
-              className="w-full max-w-md rounded-lg shadow-xl border border-gray-200 p-4 mx-3"
+              initial={{ scale: 0.98, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.98, opacity: 0 }}
+              className="w-full max-w-md rounded-lg shadow-2xl border border-gray-200 p-6 mx-3 bg-white"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-base font-bold text-gray-900">
                 {confirmUI.title}
               </div>
               {confirmUI.body && (
-                <div className="mt-1.5 text-sm text-gray-700">
+                <div className="mt-2 text-sm text-gray-700">
                   {confirmUI.body}
                 </div>
               )}
-              <div className="mt-3 flex items-center justify-end gap-2">
+              <div className="mt-4 flex items-center justify-end gap-3">
                 <button
                   onClick={() => closeConfirm(false)}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 transition-colors hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => closeConfirm(true)}
-                  className="rounded-md bg-blue-900 px-3 py-1.5 text-sm font-bold text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                  className="rounded-md bg-blue-900 px-4 py-2 text-sm font-bold text-white transition-colors hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                 >
                   Confirm
                 </button>
