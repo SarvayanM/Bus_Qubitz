@@ -9,15 +9,21 @@ export async function createPassenger(payload) {
 // E.164 like +94771234567
 
 export async function getPassengerByPhone(phone) {
+  if (!phone) return null;
+  let p = String(phone).trim();
+  if (!p.startsWith("+")) p = "+" + p;
   const { data } = await http.get(
-    `/api/passengers/by-phone/${encodeURIComponent(phone)}`
+    `/api/passengers/by-phone/${encodeURIComponent(p)}`
   );
   return data?.passenger;
 }
 
 export async function updatePassengerByPhone(phone, payload) {
+  if (!phone) throw new Error("Phone is required");
+  let p = String(phone).trim();
+  if (!p.startsWith("+")) p = "+" + p;
   const { data } = await http.patch(
-    `/passengers/by-phone/${encodeURIComponent(phone)}`,
+    `/api/passengers/by-phone/${encodeURIComponent(p)}`,
     payload
   );
   return data?.passenger;

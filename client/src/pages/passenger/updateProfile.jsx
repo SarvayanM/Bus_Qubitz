@@ -209,9 +209,10 @@ export default function UpdateProfile() {
           toast("You didn't change anything.");
           return;
         }
-
+console.log(displayPhone);
         // IMPORTANT: send E.164 with plus
         const updated = await updatePassengerByPhone(displayPhone, changed);
+        console.log(displayPhone);
         toast.success("Profile updated successfully!");
         setOriginal(updated);
         setForm((f) => ({ ...f, ...changed }));

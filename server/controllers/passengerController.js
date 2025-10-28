@@ -18,11 +18,17 @@ export async function createPassenger(req, res) {
     console.log("hi");
     const { phone, fname, lname, nic, email } = req.body || {};
     console.log(phone);
-    if (!phone) return res.status(400).json({ message: "Phone required" });
-    const existing = await Passenger.findOne({ phone });
+    const normalized = normalizePhone(phone);
+    if (!normalized)
+      return res
+        .status(400)
+        .json({
+          message: "Phone required and must be E.164 (e.g. +94771234567)",
+        });
+    const existing = await Passenger.findOne({ phone: normalized });
     if (existing) return res.json(existing);
     const created = await Passenger.create({
-      phone,
+      phone: normalized,
       fname: fname || "",
       lname: lname || "",
       nic: nic || "",
@@ -34,24 +40,38 @@ export async function createPassenger(req, res) {
   }
 }
 
-/** Normalizer (keep it simple; enforce +94XXXXXXXXX format if you want stricter policy) */
-const normalizePhone = (p = "") => String(p).trim();
+/**
+ * Normalize and validate phone to E.164-like form.
+ * - removes spaces/hyphens
+ * - ensures leading '+' is present
+ * - validates 6..15 digits after '+' (basic E.164 length check)
+ * Returns normalized phone (string) or null when invalid.
+ */
+const normalizePhone = (p = "") => {
+  if (p === undefined || p === null) return null;
+  let s = String(p).trim();
+  if (!s) return null;
+  // remove common separators
+  s = s.replace(/[\s-]/g, "");
+  // ensure leading plus
+  if (!s.startsWith("+")) s = "+" + s;
+  // basic E.164-like validation: + followed by 6..15 digits
+  if (/^\+\d{6,15}$/.test(s)) return s;
+  return null;
+};
 
 export const getPassengerByPhoneController = async (req, res) => {
   try {
     const phoneParam = normalizePhone(req.params.phone);
     if (!phoneParam) {
-      return res.status(400).json({ ok: false, message: "Phone is required." });
+      return res.status(400).json({
+        ok: false,
+        message:
+          "Phone param is required and must be E.164 (e.g. +94771234567)",
+      });
     }
-    // Be lenient: callers may pass the number with or without a leading '+'
-    // Try to find by exact match first, then fall back to common variants.
-    const candidates = [phoneParam];
-    if (!phoneParam.startsWith("+")) candidates.push("+" + phoneParam);
-    else candidates.push(phoneParam.replace(/^\+/, ""));
 
-    const passenger = await Passenger.findOne({
-      phone: { $in: candidates },
-    }).lean();
+    const passenger = await Passenger.findOne({ phone: phoneParam }).lean();
     if (!passenger) {
       return res
         .status(404)
@@ -93,13 +113,14 @@ export const updatePassengerByPhoneController = async (req, res) => {
       });
     }
 
-    // Optional: validate phone format if provided
+    // Optional: validate phone format if provided (must be E.164)
     if (phone !== undefined) {
-      const p = String(phone);
-      if (!/^\+94\d{9}$/.test(p)) {
-        return res
-          .status(400)
-          .json({ ok: false, message: "Phone must match +94XXXXXXXXX." });
+      const normalizedNew = normalizePhone(phone);
+      if (!normalizedNew) {
+        return res.status(400).json({
+          ok: false,
+          message: "When provided, phone must be E.164 (e.g. +94771234567)",
+        });
       }
     }
 

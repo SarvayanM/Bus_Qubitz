@@ -372,7 +372,13 @@ export const getBusBookings = async (req, res) => {
  * Adjust to your app's convention if needed.
  */
 function normalizePhone(input = "") {
-  return String(input).trim();
+  if (input === undefined || input === null) return null;
+  let s = String(input).trim();
+  if (!s) return null;
+  s = s.replace(/[\s-]/g, "");
+  if (!s.startsWith("+")) s = "+" + s;
+  if (/^\+\d{6,15}$/.test(s)) return s;
+  return null;
 }
 
 export const getPassengerBookingHistory = async (req, res) => {

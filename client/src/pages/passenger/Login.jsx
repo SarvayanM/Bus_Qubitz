@@ -80,13 +80,23 @@ function Login() {
     localStorage.setItem("role", role);
     localStorage.setItem("userPhone", phoneE164); // optional; remove if you don't want LS
 
-    // Write ONE canonical cookie only
-    Cookies.set("phone", phoneE164, { expires: 7, sameSite: "Strict" });
-
-    // Optional: clean up old legacy cookie if it exists
+    // Write canonical cookie names for compatibility and mark verified
     try {
-      Cookies.remove("phoneNumber");
-    } catch {}
+      Cookies.set("phone", phoneE164, { expires: 7, sameSite: "Strict" });
+      Cookies.set("phoneNumber", phoneE164, { expires: 7, sameSite: "Strict" });
+      Cookies.set("phone_verified", "true", { expires: 7, sameSite: "Strict" });
+    } catch (e) {
+      // fallback to document.cookie if js-cookie fails for any reason
+      document.cookie = `phone=${encodeURIComponent(
+        phoneE164
+      )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
+      document.cookie = `phoneNumber=${encodeURIComponent(
+        phoneE164
+      )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
+      document.cookie = `phone_verified=true; path=/; max-age=${
+        7 * 24 * 60 * 60
+      }; Secure; SameSite=Strict`;
+    }
 
     setUserRole(role);
   };
