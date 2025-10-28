@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import BusLoader from "../../components/bus/BusLoader";
 import { MapPin, Clock, Tag, Bus as BusIcon, Calendar } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-import BusDetailsCard from "../../components/bus/BusDetailsCard";
 import SeatLayout from "../../components/seats/SeatLayout";
 import PassengerDetails from "../../components/passenger/PassengerDetails";
 import { formatYMD } from "../../utils/date";
 import { computeSeatLayout } from "../../utils/seatLayout";
-import BusLoader from "../../components/bus/BusLoader";
+
 import { getBusById } from "../../api/bus";
 import { getBookingsByBusAndDate, createBooking } from "../../api/booking";
 import { getPassengerByPhone, createPassenger } from "../../api/passenger";
@@ -276,8 +276,12 @@ export default function BusBookingDashboard() {
             exit={{ opacity: 0, y: -6 }}
             className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center shadow-sm"
           >
-            <div className="w-10 h-10 border-2 border-gray-200 border-t-blue-900 rounded-full animate-spin mx-auto mb-3" />
-            <p className="font-semibold text-gray-800">Loading…</p>
+            <BusLoader
+              message="Loading…"
+              subtext="Preparing the dashboard"
+              height="h-40"
+              className="mx-auto max-w-2xl"
+            />
           </motion.div>
         )}
 

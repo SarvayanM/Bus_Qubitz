@@ -1,6 +1,7 @@
 // src/pages/BusBookingHistory.jsx
 import { useEffect, useMemo, useState } from "react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import BusLoader from "../../components/bus/BusLoader";
 import Cookies from "js-cookie";
 import { getBusesByCompany, getAvailableDatesForBus } from "../../api/bus";
 import { getBookingListByBusAndDate } from "../../api/booking";
@@ -128,14 +129,13 @@ export default function BusBookingHistory() {
   /* ----------------------------------- UI ---------------------------------- */
   if (loading) {
     return (
-      <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <Toaster />
-        <div className="rounded-2xl border border-slate-200 bg-white px-8 py-5 shadow-md">
-          <div className="flex items-center gap-3">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-            <span className="text-slate-700 font-medium">Loading…</span>
-          </div>
-        </div>
+      <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100 px-4">
+        <BusLoader
+          message="Loading booking data..."
+          subtext="Fetching bookings for your company"
+          height="h-56"
+          className="max-w-lg"
+        />
       </div>
     );
   }
@@ -143,7 +143,6 @@ export default function BusBookingHistory() {
   if (err) {
     return (
       <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <Toaster />
         <div className="rounded-2xl border border-rose-200 bg-white px-8 py-5 shadow-md max-w-md text-center">
           <div className="text-rose-600 text-lg font-semibold mb-2">Error</div>
           <p className="text-slate-700">{err}</p>
@@ -154,7 +153,6 @@ export default function BusBookingHistory() {
 
   return (
     <div className="relative min-h-screen print:bg-white">
-      <Toaster />
       <div className="pointer-events-none absolute inset-0 opacity-20 mix-blend-screen print:hidden" />
       <div className="relative mx-auto max-w-6xl px-4 py-10">
         {/* Header */}

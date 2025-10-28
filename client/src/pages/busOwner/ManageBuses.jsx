@@ -1,7 +1,8 @@
 // src/pages/ManageBuses.jsx
 import { useEffect, useState } from "react";
 import Cookies from "js-cookie";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import BusLoader from "../../components/bus/BusLoader";
 import {
   getBusesByCompany,
   getBusById,
@@ -231,14 +232,13 @@ export default function ManageBuses() {
   // Loading state (full-screen so you SEE something)
   if (loading) {
     return (
-      <div className="min-h-screen grid place-items-center bg-slate-50">
-        <Toaster />
-        <div className="rounded-xl border border-slate-200 bg-white px-6 py-4 shadow">
-          <div className="flex items-center gap-3">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-            <span className="text-slate-800 font-medium">Loading…</span>
-          </div>
-        </div>
+      <div className="min-h-screen grid place-items-center bg-slate-50 px-4">
+        <BusLoader
+          message="Loading buses..."
+          subtext="Fetching company buses"
+          height="h-56"
+          className="max-w-lg"
+        />
       </div>
     );
   }
@@ -247,7 +247,6 @@ export default function ManageBuses() {
   if (err) {
     return (
       <div className="min-h-screen grid place-items-center bg-slate-50">
-        <Toaster />
         <div className="rounded-xl border border-rose-200 bg-white px-6 py-4 shadow max-w-lg text-center">
           <div className="text-rose-600 font-semibold text-lg mb-1">Error</div>
           <p className="text-slate-700">{err}</p>
@@ -260,12 +259,15 @@ export default function ManageBuses() {
   if (!companyId) {
     return (
       <div className="min-h-screen grid place-items-center bg-slate-50">
-        <Toaster />
         <div className="rounded-xl border border-slate-200 bg-white px-8 py-6 shadow max-w-lg text-center">
-          <h1 className="text-xl font-bold text-slate-900 mb-2">No Company Selected</h1>
+          <h1 className="text-xl font-bold text-slate-900 mb-2">
+            No Company Selected
+          </h1>
           <p className="text-slate-700">
-            We couldn’t find <code className="px-1 py-0.5 bg-slate-100 rounded">companyId</code> in your cookies.
-            Make sure you’re logged in as a bus owner and try again.
+            We couldn’t find{" "}
+            <code className="px-1 py-0.5 bg-slate-100 rounded">companyId</code>{" "}
+            in your cookies. Make sure you’re logged in as a bus owner and try
+            again.
           </p>
         </div>
       </div>
@@ -274,7 +276,6 @@ export default function ManageBuses() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-sky-50 to-emerald-50">
-      <Toaster />
       <div className="mx-auto max-w-6xl px-4 py-10">
         {/* Header */}
         <header className="mb-8 text-center">
@@ -295,7 +296,9 @@ export default function ManageBuses() {
             <Readonly label="Company" value={companyName} />
             <Readonly label="Company ID" value={companyId} />
             <div className="flex items-end">
-              <p className="text-slate-600 text-sm">Select a bus below to edit or delete.</p>
+              <p className="text-slate-600 text-sm">
+                Select a bus below to edit or delete.
+              </p>
             </div>
           </div>
         </div>
@@ -307,30 +310,81 @@ export default function ManageBuses() {
         >
           <SectionTitle title="Edit Bus Details" />
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Bus Name" value={editing.busName} onChange={(v) => setField("busName", v)} />
-            <Field label="Bus Registration No" value={editing.busNo} onChange={(v) => setField("busNo", v)} />
-            <Field label="Seats" type="number" value={editing.seats} onChange={(v) => setField("seats", v)} />
-            <Field label="Price (LKR)" type="number" value={editing.price} onChange={(v) => setField("price", v)} />
-            <Field label="Image URL" value={editing.imageUrl} onChange={(v) => setField("imageUrl", v)} />
-            <Select label="Type" value={editing.type} onChange={(v) => setField("type", v)}
-                    options={["Super Luxury", "Luxury", "Semi-Luxury", "Normal"]} />
-            <Select label="Frequency" value={editing.frequency} onChange={(v) => setField("frequency", v)}
-                    options={["Daily", "Every Other Day"]} />
-            <Field label="Route From" value={editing.route.from} onChange={(v) => setRoute("from", v)} />
-            <Field label="Route To" value={editing.route.to} onChange={(v) => setRoute("to", v)} />
-            <Field label="Departure (HH:MM)" type="time" value={editing.schedule.departure}
-                   onChange={(v) => setSchedule("departure", v)} />
-            <Field label="Arrival (HH:MM)" type="time" value={editing.schedule.arrival}
-                   onChange={(v) => setSchedule("arrival", v)} />
-            <Checkbox label="Arrives next day?" checked={editing.schedule.nextDayArrival}
-                      onChange={(v) => setSchedule("nextDayArrival", v)} />
+            <Field
+              label="Bus Name"
+              value={editing.busName}
+              onChange={(v) => setField("busName", v)}
+            />
+            <Field
+              label="Bus Registration No"
+              value={editing.busNo}
+              onChange={(v) => setField("busNo", v)}
+            />
+            <Field
+              label="Seats"
+              type="number"
+              value={editing.seats}
+              onChange={(v) => setField("seats", v)}
+            />
+            <Field
+              label="Price (LKR)"
+              type="number"
+              value={editing.price}
+              onChange={(v) => setField("price", v)}
+            />
+            <Field
+              label="Image URL"
+              value={editing.imageUrl}
+              onChange={(v) => setField("imageUrl", v)}
+            />
+            <Select
+              label="Type"
+              value={editing.type}
+              onChange={(v) => setField("type", v)}
+              options={["Super Luxury", "Luxury", "Semi-Luxury", "Normal"]}
+            />
+            <Select
+              label="Frequency"
+              value={editing.frequency}
+              onChange={(v) => setField("frequency", v)}
+              options={["Daily", "Every Other Day"]}
+            />
+            <Field
+              label="Route From"
+              value={editing.route.from}
+              onChange={(v) => setRoute("from", v)}
+            />
+            <Field
+              label="Route To"
+              value={editing.route.to}
+              onChange={(v) => setRoute("to", v)}
+            />
+            <Field
+              label="Departure (HH:MM)"
+              type="time"
+              value={editing.schedule.departure}
+              onChange={(v) => setSchedule("departure", v)}
+            />
+            <Field
+              label="Arrival (HH:MM)"
+              type="time"
+              value={editing.schedule.arrival}
+              onChange={(v) => setSchedule("arrival", v)}
+            />
+            <Checkbox
+              label="Arrives next day?"
+              checked={editing.schedule.nextDayArrival}
+              onChange={(v) => setSchedule("nextDayArrival", v)}
+            />
           </div>
 
           {/* Pickups */}
           <div className="mt-8">
             <SectionTitle title="Pick-up Points" />
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-600">Add or remove pick-up places and times.</p>
+              <p className="text-sm text-slate-600">
+                Add or remove pick-up places and times.
+              </p>
               <button
                 type="button"
                 onClick={addPickup}
@@ -342,14 +396,24 @@ export default function ManageBuses() {
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {editing.pickups.map((p, i) => (
-                <div key={i} className="rounded-xl border border-slate-200 bg-white p-4 flex items-end gap-3">
+                <div
+                  key={i}
+                  className="rounded-xl border border-slate-200 bg-white p-4 flex items-end gap-3"
+                >
                   <div className="flex-1">
-                    <Field label={`Place #${i + 1}`} value={p.place}
-                           onChange={(v) => setPickup(i, "place", v)} />
+                    <Field
+                      label={`Place #${i + 1}`}
+                      value={p.place}
+                      onChange={(v) => setPickup(i, "place", v)}
+                    />
                   </div>
                   <div className="w-40">
-                    <Field label="Time" type="time" value={p.time}
-                           onChange={(v) => setPickup(i, "time", v)} />
+                    <Field
+                      label="Time"
+                      type="time"
+                      value={p.time}
+                      onChange={(v) => setPickup(i, "time", v)}
+                    />
                   </div>
                   <button
                     type="button"
@@ -368,7 +432,9 @@ export default function ManageBuses() {
               type="submit"
               disabled={!editing._id}
               className={`rounded-xl px-6 py-3 font-semibold text-white shadow transition ${
-                editing._id ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-400 cursor-not-allowed"
+                editing._id
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-slate-400 cursor-not-allowed"
               }`}
             >
               Save Changes
@@ -412,9 +478,14 @@ export default function ManageBuses() {
                     <Td>{b.busNo}</Td>
                     <Td>{b.seats}</Td>
                     <Td>LKR {Number(b.price).toFixed(2)}</Td>
-                    <Td>{b?.route?.from} → {b?.route?.to}</Td>
+                    <Td>
+                      {b?.route?.from} → {b?.route?.to}
+                    </Td>
                     <Td>{b?.schedule?.departure}</Td>
-                    <Td>{b?.schedule?.arrival}{b?.schedule?.nextDayArrival ? " (+1d)" : ""}</Td>
+                    <Td>
+                      {b?.schedule?.arrival}
+                      {b?.schedule?.nextDayArrival ? " (+1d)" : ""}
+                    </Td>
                     <Td>{b.type}</Td>
                     <Td>
                       <div className="flex gap-2">
@@ -438,7 +509,10 @@ export default function ManageBuses() {
                 ))}
                 {!buses.length && (
                   <tr>
-                    <td colSpan={10} className="px-6 py-8 text-center text-slate-600">
+                    <td
+                      colSpan={10}
+                      className="px-6 py-8 text-center text-slate-600"
+                    >
                       No buses found. Add one first.
                     </td>
                   </tr>
@@ -454,12 +528,18 @@ export default function ManageBuses() {
 
 /* ---------------- atoms ---------------- */
 function SectionTitle({ title }) {
-  return <h2 className="col-span-full mb-1 text-lg font-semibold text-slate-900">{title}</h2>;
+  return (
+    <h2 className="col-span-full mb-1 text-lg font-semibold text-slate-900">
+      {title}
+    </h2>
+  );
 }
 function Readonly({ label, value }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-slate-800 mb-2">{label}</label>
+      <label className="block text-sm font-semibold text-slate-800 mb-2">
+        {label}
+      </label>
       <input
         value={value || "-"}
         readOnly
@@ -471,12 +551,18 @@ function Readonly({ label, value }) {
 function Field({ label, value, onChange, type = "text" }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-slate-800 mb-2">{label}</label>
+      <label className="block text-sm font-semibold text-slate-800 mb-2">
+        {label}
+      </label>
       <input
         type={type}
         value={value ?? ""}
         onChange={(e) =>
-          onChange(type === "number" ? e.target.valueAsNumber || e.target.value : e.target.value)
+          onChange(
+            type === "number"
+              ? e.target.valueAsNumber || e.target.value
+              : e.target.value
+          )
         }
         className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
       />
@@ -486,7 +572,9 @@ function Field({ label, value, onChange, type = "text" }) {
 function Select({ label, value, onChange, options = [] }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-slate-800 mb-2">{label}</label>
+      <label className="block text-sm font-semibold text-slate-800 mb-2">
+        {label}
+      </label>
       <select
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
@@ -522,5 +610,11 @@ function Th({ children }) {
   );
 }
 function Td({ children, className = "" }) {
-  return <td className={`px-4 py-3 text-slate-900 align-top whitespace-nowrap ${className}`}>{children}</td>;
+  return (
+    <td
+      className={`px-4 py-3 text-slate-900 align-top whitespace-nowrap ${className}`}
+    >
+      {children}
+    </td>
+  );
 }

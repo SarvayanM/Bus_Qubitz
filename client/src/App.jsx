@@ -82,7 +82,7 @@ function AppContent() {
     <RoleContext.Provider value={roleContextValue}>
       <div className="min-h-screen flex flex-col bg-gray-50">
         {/* Global Toasts */}
-        <Toaster position="top-center" />
+        <Toaster position="top-right" />
 
         {/* NAVBAR */}
         {!hideNavbar && (

@@ -1,6 +1,7 @@
 // src/pages/company/CompanyRegister.jsx
 import { useEffect, useMemo, useState } from "react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import BusLoader from "../../components/bus/BusLoader";
 import { createCompany, checkCompanyExists } from "../../api/company";
 
 const EMPTY_FORM = {
@@ -117,8 +118,6 @@ export default function CompanyHistory() {
 
   return (
     <div className="p-4 sm:p-6">
-      <Toaster position="top-center" />
-
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
         <h1 className="text-xl sm:text-2xl font-semibold">Companies</h1>
         <button
@@ -158,7 +157,14 @@ export default function CompanyHistory() {
             {loading ? (
               <tr>
                 <td className="px-3 py-4" colSpan={4}>
-                  Loading…
+                  <div className="py-4">
+                    <BusLoader
+                      message="Loading companies..."
+                      subtext="Please wait"
+                      height="h-40"
+                      className="mx-auto max-w-md"
+                    />
+                  </div>
                 </td>
               </tr>
             ) : rows.length === 0 ? (

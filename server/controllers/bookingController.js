@@ -26,10 +26,18 @@ export const getByBusAndDate = async (req, res, next) => {
 
     const bookedByGents = [];
     const bookedByLadies = [];
+    // Bookings store gender per-seat (seats: [{ number, gender }]).
+    // Distribute seats into gender buckets based on each seat's gender.
     bookings.forEach((b) => {
-      (b.gender === "Male" ? bookedByGents : bookedByLadies).push(
-        ...(b.seats || [])
-      );
+      (b.seats || []).forEach((s) => {
+        const g = (s?.gender || "").toString();
+        if (g === "Male") bookedByGents.push(s);
+        else if (g === "Female") bookedByLadies.push(s);
+        else {
+          // treat unknown as ladies to preserve previous behavior? push to ladies by default
+          bookedByLadies.push(s);
+        }
+      });
     });
 
     res.json({
@@ -318,14 +326,18 @@ export const getBusBookings = async (req, res) => {
     const bookedByLadies = [];
     const unavailableSeats = [];
 
+    // Each booking contains seats with per-seat gender. Distribute accordingly.
     bookings.forEach((b) => {
       if (b.status === "unavailable") {
-        unavailableSeats.push(...b.seats);
-      } else if (b.passenger?.gender === "Male") {
-        bookedByGents.push(...b.seats);
-      } else if (b.passenger?.gender === "Female") {
-        bookedByLadies.push(...b.seats);
+        unavailableSeats.push(...(b.seats || []));
+        return;
       }
+      (b.seats || []).forEach((s) => {
+        const g = (s?.gender || "").toString();
+        if (g === "Male") bookedByGents.push(s);
+        else if (g === "Female") bookedByLadies.push(s);
+        else bookedByLadies.push(s);
+      });
     });
 
     res.json({

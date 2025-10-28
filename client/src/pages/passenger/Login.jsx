@@ -9,6 +9,7 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import auth, { db } from "../../services/firebaseAuth";
+import Cookies from "js-cookie";
 import {
   getDoc,
   setDoc,
@@ -50,7 +51,7 @@ function Login() {
 
   const notify = (message, type = "error") =>
     toast[type](message, {
-      position: "top-center",
+      position: "top-right",
       autoClose: 3000,
       pauseOnHover: true,
       draggable: true,
@@ -69,17 +70,24 @@ function Login() {
       );
     }
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) navigate("/home");
+      if (user) navigate("/");
     });
     return () => unsub();
   }, [navigate]);
 
   const persistSession = (role, phoneE164) => {
+    // Role in localStorage is fine to keep
     localStorage.setItem("role", role);
-    localStorage.setItem("userPhone", phoneE164);
-    document.cookie = `phone=${encodeURIComponent(
-      phoneE164
-    )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
+    localStorage.setItem("userPhone", phoneE164); // optional; remove if you don't want LS
+
+    // Write ONE canonical cookie only
+    Cookies.set("phone", phoneE164, { expires: 7, sameSite: "Strict" });
+
+    // Optional: clean up old legacy cookie if it exists
+    try {
+      Cookies.remove("phoneNumber");
+    } catch {}
+
     setUserRole(role);
   };
 
@@ -189,7 +197,8 @@ function Login() {
       persistSession(role, phoneNumber);
 
       notify("Login successful!", "success");
-      navigate("/");
+      // allow the success toast to display briefly before navigating
+      setTimeout(() => navigate("/"), 900);
     } catch (err) {
       const code = err?.code || "";
       if (code === "auth/invalid-verification-code") {
@@ -231,19 +240,16 @@ function Login() {
         {/* Right: Auth Card */}
         <div className="flex items-center justify-center px-4 h-full">
           <div className="w-full max-w-md">
-            {/* Header */}
-            <div className="mb-2 flex items-center gap-2">
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl ring-1 ring-black/10">
-                <HiOutlineLockClosed className="text-xl text-slate-800" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold tracking-tight text-slate-900">
-                  Sign in to Leoforeio
-                </h1>
-                <p className="text-xs text-slate-600">
-                  Use your verified mobile number to continue
-                </p>
-              </div>
+            {/* Header Section */}
+            <div className="text-center mb-8">
+              <h1 className="text-4xl font-bold text-gray-900 mb-3">
+                Hop on the Leoforeio Ride
+              </h1>
+              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                Just select your seats and complete passenger details to proceed
+                with your booking
+              </p>
+                      
             </div>
 
             <div className="rounded-2xl border border-black/10 bg-white shadow-xl transition-all">

@@ -16,7 +16,7 @@ const pickPassenger = (p) =>
 export async function createPassenger(req, res) {
   try {
     console.log("hi");
-    const { phone, fname, lname } = req.body || {};
+    const { phone, fname, lname, nic, email } = req.body || {};
     console.log(phone);
     if (!phone) return res.status(400).json({ message: "Phone required" });
     const existing = await Passenger.findOne({ phone });
@@ -25,6 +25,8 @@ export async function createPassenger(req, res) {
       phone,
       fname: fname || "",
       lname: lname || "",
+      nic: nic || "",
+      email: email || "",
     });
     res.status(201).json(created);
   } catch {
@@ -41,8 +43,15 @@ export const getPassengerByPhoneController = async (req, res) => {
     if (!phoneParam) {
       return res.status(400).json({ ok: false, message: "Phone is required." });
     }
+    // Be lenient: callers may pass the number with or without a leading '+'
+    // Try to find by exact match first, then fall back to common variants.
+    const candidates = [phoneParam];
+    if (!phoneParam.startsWith("+")) candidates.push("+" + phoneParam);
+    else candidates.push(phoneParam.replace(/^\+/, ""));
 
-    const passenger = await Passenger.findOne({ phone: phoneParam }).lean();
+    const passenger = await Passenger.findOne({
+      phone: { $in: candidates },
+    }).lean();
     if (!passenger) {
       return res
         .status(404)
@@ -52,13 +61,11 @@ export const getPassengerByPhoneController = async (req, res) => {
     return res.status(200).json({ ok: true, passenger });
   } catch (err) {
     console.error("getPassengerByPhone error:", err);
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        message: "Failed to fetch passenger.",
-        error: err?.message,
-      });
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to fetch passenger.",
+      error: err?.message,
+    });
   }
 };
 
@@ -80,12 +87,10 @@ export const updatePassengerByPhoneController = async (req, res) => {
         gender === "Female"
       )
     ) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          message: "Invalid gender. Use '', 'Male', or 'Female'.",
-        });
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid gender. Use '', 'Male', or 'Female'.",
+      });
     }
 
     // Optional: validate phone format if provided
@@ -131,13 +136,11 @@ export const updatePassengerByPhoneController = async (req, res) => {
     return res.status(200).json({ ok: true, passenger });
   } catch (err) {
     console.error("updatePassengerByPhone error:", err);
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        message: "Failed to update passenger.",
-        error: err?.message,
-      });
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to update passenger.",
+      error: err?.message,
+    });
   }
 };
 

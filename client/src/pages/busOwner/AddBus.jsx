@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import Cookies from "js-cookie"; // ✅ add this
 import VirtualizedSelect from "../../components/common/VirtualizedSelect";
 import { createBus } from "../../api/bus";
@@ -306,7 +306,6 @@ export default function AddBus() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2563EB]/10 to-[#16A34A]/10 py-8 mt-12">
-      <Toaster />
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-8">

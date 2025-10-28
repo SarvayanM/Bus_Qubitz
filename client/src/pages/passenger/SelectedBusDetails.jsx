@@ -680,9 +680,11 @@ export default function SelectedBusDetails({ userName = "" }) {
             {defState.loading ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {Array.from({ length: defLimit }).map((_, i) => (
-                  <div
+                  <BusLoader
                     key={i}
-                    className="h-56 rounded-2xl border border-slate-200 bg-white shadow animate-pulse"
+                    message={i === 0 ? "Loading journeys…" : ""}
+                    subtext={i === 0 ? "Please wait a moment" : ""}
+                    height="h-56"
                   />
                 ))}
               </div>

@@ -203,7 +203,7 @@ export default function Navbar() {
 
                 <button
                   type="button"
-                  onClick={() => navigate("/profile")}
+                  onClick={() => navigate("/updateProfile")}
                   className="p-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 hover:bg-blue-100 transition cursor-pointer"
                   aria-label="Open profile"
                   title="Profile"

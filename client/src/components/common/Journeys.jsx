@@ -11,6 +11,7 @@ import { fetchJourneys } from "../../api/journeys";
 import { getBuses } from "../../api/bus";
 import { useNavigate } from "react-router-dom";
 import BusCard from "./BusCard";
+import BusLoader from "../bus/BusLoader";
 
 // -----------------------------
 // Utilities
@@ -509,14 +510,12 @@ export default function Journeys() {
       {/* Content */}
       <div className="mx-auto max-w-7xl px-4 pb-16">
         {state.loading && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: limit }).map((_, i) => (
-              <div
-                key={i}
-                className="h-56 rounded-2xl border border-slate-200 bg-white shadow animate-pulse"
-              />
-            ))}
-          </div>
+          <BusLoader
+            message="Loading journeys..."
+            subtext="Finding the best trips for you"
+            height="h-64"
+            className="mx-auto max-w-7xl"
+          />
         )}
 
         {!state.loading && state.error && (

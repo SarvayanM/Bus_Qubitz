@@ -126,7 +126,9 @@ export default function PhoneAuth({
   const persistSession = (role, phoneE164) => {
     localStorage.setItem("role", role);
     localStorage.setItem("userPhone", phoneE164);
+    // persist both cookie names for compatibility with older code
     Cookies.set("phone", phoneE164, { expires: 30 });
+    Cookies.set("phoneNumber", phoneE164, { expires: 30 });
     Cookies.set("phone_verified", "true", { expires: 30 });
     setUserRole?.(role);
   };

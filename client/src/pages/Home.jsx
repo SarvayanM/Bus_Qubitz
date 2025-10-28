@@ -6,6 +6,7 @@ import bus2 from "../assets/images/bus5.jpeg";
 import bus3 from "../assets/images/bus1.jpg";
 import bus4 from "../assets/images/bus11.jpeg";
 import bus5 from "../assets/images/bus2.jpg";
+import BusLoader from "../components/bus/BusLoader";
 
 /** Utility: yyyy-mm-dd with local timezone (Asia/Colombo) */
 function todayISO() {
@@ -394,14 +395,12 @@ export default function Home({ userName = "" }) {
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {[...Array(6)].map((_, index) => (
-                <div
-                  key={index}
-                  className="h-80 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 animate-pulse border border-gray-200"
-                />
-              ))}
-            </div>
+            <BusLoader
+              message="Loading journeys..."
+              subtext="Fetching exclusive journeys"
+              height="h-72"
+              className="mx-auto max-w-6xl"
+            />
           ) : error ? (
             <div className="text-center py-12 animate-fade-in-up">
               <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-2xl py-12 px-8 max-w-md mx-auto shadow-lg">

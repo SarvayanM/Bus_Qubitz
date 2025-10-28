@@ -6,6 +6,7 @@ import bus2 from "../assets/images/bus5.jpeg";
 import bus3 from "../assets/images/bus1.jpg";
 import bus4 from "../assets/images/bus11.jpeg";
 import bus5 from "../assets/images/bus2.jpg";
+import BusLoader from "../components/bus/BusLoader";
 
 /** Utility: yyyy-mm-dd with local timezone (Asia/Colombo) */
 function todayISO() {
@@ -280,10 +281,12 @@ export default function Home({ userName = "" }) {
 
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[...Array(6)].map((_, index) => (
-                <div
+              {[...Array(3)].map((_, index) => (
+                <BusLoader
                   key={index}
-                  className="h-80 rounded-xl bg-white border border-[#2563EB]/20 animate-pulse"
+                  message={index === 0 ? "Loading routes…" : ""}
+                  subtext={index === 0 ? "Fetching popular routes" : ""}
+                  height="h-64"
                 />
               ))}
             </div>

@@ -18,6 +18,8 @@ export default function PassengerDetails({
     fname: "",
     lname: "",
     phone: "", // E.164 from PhoneAuth
+    nic: "",
+    email: "",
     pickup: "",
     drop: "",
     payment: "Card",
@@ -50,6 +52,26 @@ export default function PassengerDetails({
         : "Enter a valid last name.",
     phone: (v) =>
       v && /^\+\d{6,15}$/.test(v) ? "" : "Verified phone is missing/invalid.",
+    nic: (v) => {
+      if (!v) return ""; // optional
+      const s = String(v).trim();
+      // Sri Lanka old NIC: 9 digits + V or X (case-insensitive)
+      const oldNic = /^\d{9}[VXvx]$/;
+      // New NIC: 12 digits
+      const newNic = /^\d{12}$/;
+      // Passport: allow alphanumeric 5-20 chars
+      const passport = /^[A-Za-z0-9\-\s]{5,20}$/;
+      return oldNic.test(s) || newNic.test(s) || passport.test(s)
+        ? ""
+        : "Enter a valid NIC or passport number.";
+    },
+    email: (v) => {
+      if (!v) return ""; // optional
+      const s = String(v).trim();
+      // simple RFC-like check (not exhaustive)
+      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return re.test(s) ? "" : "Enter a valid email address.";
+    },
     pickup: (v) => (!v ? "Select pickup point." : ""),
     drop: (v) => (!v ? "Select drop point." : ""),
     payment: (v) =>
@@ -96,6 +118,8 @@ export default function PassengerDetails({
           ...f,
           fname: f.fname || existing.fname || "",
           lname: f.lname || existing.lname || "",
+          nic: f.nic || existing.nic || "",
+          email: f.email || existing.email || "",
         }));
       }
     } catch {
@@ -108,6 +132,7 @@ export default function PassengerDetails({
     fname: validators.fname(form.fname),
     lname: validators.lname(form.lname),
     phone: validators.phone(form.phone),
+    email: validators.email(form.email),
     pickup: validators.pickup(form.pickup),
     drop: validators.drop(form.drop),
     payment: validators.payment(form.payment),
@@ -195,6 +220,24 @@ export default function PassengerDetails({
           onBlur={onBlur("lname")}
           error={errors.lname}
           icon="M12 6v6m0 0v6m0-6h6m-6 0H6"
+        />
+
+        <TextField
+          label="NIC / Passport"
+          value={form.nic}
+          onChange={setField("nic")}
+          onBlur={onBlur("nic")}
+          error={errors.nic}
+          icon="M12 6v6m0 0v6m0-6h6m-6 0H6"
+        />
+
+        <TextField
+          label="Email"
+          value={form.email}
+          onChange={setField("email")}
+          onBlur={onBlur("email")}
+          error={errors.email}
+          icon="M3 8l7-5 7 5v6a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"
         />
 
         <SelectField

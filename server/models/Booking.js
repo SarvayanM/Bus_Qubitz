@@ -20,6 +20,8 @@ const BookingSchema = new mongoose.Schema(
         type: String,
         required: true,
       },
+      nic: { type: String, default: "" },
+      email: { type: String, default: "" },
     },
     pickup: { type: String, required: true },
     drop: { type: String, required: true },

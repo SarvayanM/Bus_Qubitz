@@ -60,7 +60,7 @@ function CompanyLogin() {
       if (email === "admin@gmail.com" && password === "Admin@123") {
         persistSession("admin", email);
         notify("Login successful!", "success");
-        navigate("/home");
+        navigate("/");
         return;
       }
 
@@ -83,7 +83,7 @@ function CompanyLogin() {
       }
 
       notify("Login successful!", "success");
-      navigate("/home");
+      navigate("/");
     } catch (error) {
       const errorMessages = {
         "auth/user-not-found": "No user found with this email.",

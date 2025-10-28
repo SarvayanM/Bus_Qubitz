@@ -1,25 +1,91 @@
 // frontend/src/pages/BookingHistory.jsx
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import Cookies from "js-cookie";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import BusLoader from "../../components/bus/BusLoader";
 import {
   getPassengerBookingHistoryByPhone,
   cancelBookingById,
-} from "../../api/booking"; // add these (see API section)
+} from "../../api/booking";
+
+// ---------- Icons ----------
+const SearchIcon = () => (
+  <svg
+    className="w-4 h-4"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+    />
+  </svg>
+);
+
+const FilterIcon = () => (
+  <svg
+    className="w-4 h-4"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z"
+    />
+  </svg>
+);
+
+const CalendarIcon = () => (
+  <svg
+    className="w-4 h-4"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+    />
+  </svg>
+);
+
+const ClockIcon = () => (
+  <svg
+    className="w-4 h-4"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
+  </svg>
+);
 
 // ---------- Small UI bits ----------
-function Badge({ children, tone = "teal" }) {
+function Badge({ children, tone = "blue" }) {
   const tones = {
-    teal: "bg-teal-100 text-teal-800 border-teal-200",
-    amber: "bg-amber-100 text-amber-800 border-amber-200",
-    gray: "bg-gray-100 text-gray-800 border-gray-200",
-    red: "bg-red-100 text-red-800 border-red-200",
-    green: "bg-green-100 text-green-800 border-green-200",
-    blue: "bg-blue-100 text-blue-800 border-blue-200",
+    blue: "bg-blue-100 text-blue-800 border border-blue-200",
+    amber: "bg-amber-100 text-amber-800 border border-amber-200",
+    gray: "bg-gray-100 text-gray-800 border border-gray-200",
+    red: "bg-red-100 text-red-800 border border-red-200",
+    green: "bg-green-100 text-green-800 border border-green-200",
+    teal: "bg-teal-100 text-teal-800 border border-teal-200",
   };
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${tones[tone]}`}
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 ${tones[tone]}`}
     >
       {children}
     </span>
@@ -29,11 +95,8 @@ function Badge({ children, tone = "teal" }) {
 // ---------- Time helpers (Asia/Colombo, no DST) ----------
 const TZ = "Asia/Colombo";
 function toDepartureDate(travelDate, timeHHMM) {
-  // travelDate: "YYYY-MM-DD"; timeHHMM: "HH:mm"
-  // Build a local Date in Colombo
   const [y, m, d] = (travelDate || "").split("-").map(Number);
   const [hh, mm] = (timeHHMM || "00:00").split(":").map(Number);
-  // Create as local; JS Date uses system TZ, but we only need consistent differences.
   const dt = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
   return dt;
 }
@@ -53,8 +116,8 @@ function refundPercent(hoursBefore) {
   if (hoursBefore >= 24) return 100;
   if (hoursBefore >= 12) return 75;
   if (hoursBefore >= 6) return 50;
-  if (hoursBefore >= 4) return 0; // 6h–4h window => no refund, still cancellable
-  return -1; // not cancellable
+  if (hoursBefore >= 4) return 0;
+  return -1;
 }
 
 // ---------- Reason options ----------
@@ -76,7 +139,6 @@ function CancelCell({ booking, onCancelled }) {
   const intervalRef = useRef(null);
 
   useEffect(() => {
-    // tick every second
     intervalRef.current = setInterval(
       () => setNowLeft(msUntil(departAt)),
       1000
@@ -86,19 +148,22 @@ function CancelCell({ booking, onCancelled }) {
 
   const hoursLeft = nowLeft / 3600000;
   const pct = refundPercent(hoursLeft);
-  const cancellable = pct >= 0; // inside >=4h window (or earlier)
-  const withinWindow = hoursLeft >= 4; // strictly allowed to cancel
+  const cancellable = pct >= 0;
+  const withinWindow = hoursLeft >= 4;
 
   if (!cancellable) {
     return (
-      <div className="text-xs text-slate-500">Cancellation window passed</div>
+      <div className="text-xs text-gray-500 font-medium">
+        Cancellation window passed
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="text-xs text-slate-600">
-        Time left: <span className="font-mono">{fmtHMS(nowLeft)}</span>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1 text-sm text-gray-700">
+        <ClockIcon />
+        <span className="font-mono font-medium">{fmtHMS(nowLeft)}</span>
       </div>
       <div className="flex items-center gap-2">
         <Badge tone={pct === 0 ? "gray" : pct >= 75 ? "green" : "amber"}>
@@ -111,7 +176,7 @@ function CancelCell({ booking, onCancelled }) {
             onCancelled={onCancelled}
           />
         ) : (
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-gray-500 font-medium">
             (&lt; 4h left — no cancel)
           </span>
         )}
@@ -123,9 +188,12 @@ function CancelCell({ booking, onCancelled }) {
 function Modal({ open, onClose, children }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="absolute left-1/2 top-1/2 w-[95%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/20 bg-white/95 p-5 shadow-xl">
+    <div className="fixed inset-0 z-50 animate-fadeIn">
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="absolute left-1/2 top-1/2 w-[95%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-gray-200 bg-white p-6 shadow-2xl animate-scaleIn">
         {children}
       </div>
     </div>
@@ -162,24 +230,25 @@ function CancelAction({ booking, refundPct, onCancelled }) {
   return (
     <>
       <button
-        className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+        className="rounded-lg bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:ring-offset-2 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
         onClick={() => setOpen(true)}
       >
-        Cancel
+        Cancel Booking
       </button>
 
       <Modal open={open} onClose={() => !submitting && setOpen(false)}>
-        <h3 className="text-lg font-semibold text-slate-900">Cancel booking</h3>
-        <p className="mt-1 text-sm text-slate-700">
-          Refund: <span className="font-semibold">{refundPct}%</span> will be
-          credited to your wallet.
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Cancel Booking</h3>
+        <p className="text-sm text-gray-700 mb-4">
+          Refund:{" "}
+          <span className="font-semibold text-blue-900">{refundPct}%</span> will
+          be credited to your wallet.
         </p>
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-slate-800 mb-1">
+        <div className="mb-6">
+          <label className="block text-sm font-semibold text-gray-800 mb-2">
             Reason for cancellation
           </label>
           <select
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-blue-900 focus:ring-2 focus:ring-blue-900/20"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             disabled={submitting}
@@ -193,20 +262,20 @@ function CancelAction({ booking, refundPct, onCancelled }) {
           </select>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="flex justify-end gap-3">
           <button
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all duration-200 disabled:opacity-50"
             onClick={() => setOpen(false)}
             disabled={submitting}
           >
             Close
           </button>
           <button
-            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+            className="rounded-lg bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 transition-all duration-200 disabled:opacity-50"
             onClick={doCancel}
             disabled={submitting || !reason}
           >
-            {submitting ? "Cancelling…" : "Confirm Cancel"}
+            {submitting ? "Cancelling..." : "Confirm Cancel"}
           </button>
         </div>
       </Modal>
@@ -222,7 +291,6 @@ export default function BookingHistory() {
   const [date, setDate] = useState("");
   const [phone, setPhone] = useState("");
 
-  // Identify by phone (cookie)
   useEffect(() => {
     setPhone(Cookies.get("phone") || "");
   }, []);
@@ -272,24 +340,41 @@ export default function BookingHistory() {
       .filter((b) => (date ? String(b?.travelDate) === date : true));
   }, [state.data, query, status, date]);
 
-  const surface =
-    "rounded-2xl border border-white/60 bg-white/90 shadow-[0_8px_30px_rgb(0,0,0,0.06)] backdrop-blur-sm";
+  const anyCancellable = useMemo(() => {
+    return rows.some((b) => {
+      if (!b || b?.status === "Cancelled") return false;
+      const departTime = b?.bus?.departureTime || "00:00";
+      const departAt = toDepartureDate(b?.travelDate, departTime);
+      const hoursLeft = msUntil(departAt) / 3600000;
+      return refundPercent(hoursLeft) >= 0;
+    });
+  }, [rows]);
+
+  const passengerDisplayName = (() => {
+    const p = state.data?.passenger;
+    if (p && (p.fname || p.lname))
+      return `${(p.fname || "").trim()} ${(p.lname || "").trim()}`.trim();
+    const first = rows[0]?.passenger;
+    if (first && (first.fname || first.lname))
+      return `${(first.fname || "").trim()} ${(
+        first.lname || ""
+      ).trim()}`.trim();
+    return null;
+  })();
+
   const inputCls =
-    "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
+    "w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm outline-none transition-all duration-200 focus:border-blue-900 focus:ring-2 focus:ring-blue-900/20";
 
   if (state.loading) {
     return (
-      <div className="relative">
-        <Toaster />
-        <div className="pointer-events-none fixed inset-0 bg-gradient-to-b from-white/75 via-white/60 to-white/75 backdrop-blur-sm" />
-        <div className="relative z-10 mx-auto max-w-6xl px-4 py-10">
-          <div className={surface + " p-8"}>
-            <div className="animate-pulse space-y-4">
-              <div className="h-6 w-1/3 rounded bg-gray-200" />
-              <div className="h-4 w-1/2 rounded bg-gray-200" />
-              <div className="h-4 w-2/3 rounded bg-gray-200" />
-            </div>
-          </div>
+      <div className="min-h-screen py-8 px-4">
+        <div className="mx-auto max-w-3xl">
+          <BusLoader
+            message="Loading booking history..."
+            subtext="This may take a few seconds"
+            height="h-64"
+            className="mx-auto"
+          />
         </div>
       </div>
     );
@@ -297,12 +382,12 @@ export default function BookingHistory() {
 
   if (state.error) {
     return (
-      <div className="relative">
-        <Toaster />
-        <div className="pointer-events-none fixed inset-0 bg-gradient-to-b from-white/75 via-white/60 to-white/75 backdrop-blur-sm" />
-        <div className="relative z-10 mx-auto max-w-3xl px-4 py-10">
-          <div className="rounded-2xl border border-red-200 bg-white/95 p-4 text-red-800 shadow">
-            <p className="font-semibold">Failed to load booking history</p>
+      <div className="min-h-screen py-8">
+        <div className="mx-auto max-w-3xl px-4">
+          <div className="rounded-xl border border-red-200 bg-white p-6 text-red-800 shadow-sm">
+            <p className="font-semibold text-lg mb-2">
+              Failed to load booking history
+            </p>
             <p className="text-sm opacity-90">{state.error}</p>
           </div>
         </div>
@@ -311,111 +396,161 @@ export default function BookingHistory() {
   }
 
   return (
-    <div className="relative">
-      <Toaster />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-b from-white/80 via-white/65 to-white/80 backdrop-blur-sm" />
-      <div className="relative z-10 mx-auto max-w-7xl px-4 py-8 text-slate-800">
+    <div className="min-h-screen py-24">
+      <div className="mx-auto max-w-7xl px-4">
         {/* Header */}
-        <div
-          className={
-            "mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between " +
-            surface +
-            " p-5"
-          }
-        >
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Your Booking History
-            </h1>
-            <p className="text-sm text-slate-700">
-              Phone: <span className="font-medium">{phone || "—"}</span> · Total{" "}
-              <span className="font-medium">
-                {state.data?.count ?? rows.length}
-              </span>{" "}
-              bookings
-            </p>
-          </div>
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Booking History
+          </h1>
+          <p className="text-gray-700">
+            Passenger:{" "}
+            <span className="font-semibold text-blue-900">
+              {passengerDisplayName || phone || "—"}
+            </span>{" "}
+            • Total{" "}
+            <span className="font-semibold text-blue-900">
+              {state.data?.count ?? rows.length}
+            </span>{" "}
+            bookings
+          </p>
+        </div>
 
-          {/* Filters */}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className={inputCls + " sm:w-auto"}
-            />
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className={inputCls + " sm:w-auto"}
-            >
-              <option>All</option>
-              <option>Confirmed</option>
-              <option>Pending</option>
-              <option>Cancelled</option>
-            </select>
-            <input
-              type="text"
-              placeholder="Search route, pickup/drop, name, phone, operator…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className={inputCls + " sm:w-80"}
-            />
+        {/* Filters */}
+        <div className="mb-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <CalendarIcon />
+              </div>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className={inputCls + " pl-10"}
+              />
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FilterIcon />
+              </div>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className={inputCls + " pl-10"}
+              >
+                <option>All</option>
+                <option>Confirmed</option>
+                <option>Pending</option>
+                <option>Cancelled</option>
+              </select>
+            </div>
+
+            <div className="relative md:col-span-2">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <SearchIcon />
+              </div>
+              <input
+                type="text"
+                placeholder="Search route, pickup/drop, name, phone, operator..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className={inputCls + " pl-10"}
+              />
+            </div>
           </div>
         </div>
 
         {/* Table (desktop) */}
-        <div className={"hidden overflow-x-auto md:block " + surface}>
-          <table className="min-w-full text-left text-sm text-slate-800">
-            <thead className="text-slate-800">
-              <tr className="bg-white/95">
-                <th className="px-5 py-3">Travel Date</th>
-                <th className="px-5 py-3">From → To</th>
-                <th className="px-5 py-3">Bus / Operator</th>
-                <th className="px-5 py-3">Seats</th>
-                <th className="px-5 py-3">Pickup / Drop</th>
-                <th className="px-5 py-3">Payment</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Booked At</th>
-                <th className="px-5 py-3">Cancel</th>
+        <div className="hidden lg:block rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <table className="min-w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Travel Date
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Route
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Bus / Operator
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Seats
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  NIC / Passport
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Pickup / Drop
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Booked At
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Cancellation Reason
+                </th>
+                {anyCancellable && (
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="bg-white divide-y divide-gray-200">
               {rows.map((b) => (
-                <tr key={b._id} className="hover:bg-white/80">
-                  <td className="px-5 py-3 font-medium">{b.travelDate}</td>
-                  <td className="px-5 py-3">
-                    {b?.bus?.from || "—"} <span className="opacity-60">→</span>{" "}
-                    {b?.bus?.to || "—"}
-                    {b?.bus?.departureTime && (
-                      <span className="ml-2 text-xs text-slate-600">
-                        ({b.bus.departureTime})
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex flex-col">
-                      <span className="font-medium">
-                        {b?.bus?.operatorName || "—"}
-                      </span>
-                      <span className="text-xs text-slate-600">
-                        {b?.bus?.plateNo || ""}
-                      </span>
+                <tr
+                  key={b._id}
+                  className="hover:bg-gray-50 transition-colors duration-150"
+                >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="font-medium text-gray-900">
+                      {b.travelDate}
                     </div>
                   </td>
-                  <td className="px-5 py-3">
-                    {Array.isArray(b.seats) && b.seats.length > 0
-                      ? b.seats.map((s) => s?.number ?? s).join(", ")
-                      : "—"}
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-gray-900">
+                      {b?.bus?.from || "—"} → {b?.bus?.to || "—"}
+                    </div>
+                    {b?.bus?.departureTime && (
+                      <div className="text-sm text-gray-600 mt-1">
+                        Departure: {b.bus.departureTime}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-5 py-3">
-                    {b?.pickup || "—"} <span className="opacity-60">/</span>{" "}
-                    {b?.drop || "—"}
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-gray-900">
+                      {b?.bus?.operatorName || "—"}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {b?.bus?.plateNo || ""}
+                    </div>
                   </td>
-                  <td className="px-5 py-3">
-                    <Badge tone="amber">{b?.payment || "—"}</Badge>
+                  <td className="px-6 py-4">
+                    <div className="text-gray-900 font-medium">
+                      {Array.isArray(b.seats) && b.seats.length > 0
+                        ? b.seats.map((s) => s?.number ?? s).join(", ")
+                        : "—"}
+                    </div>
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-6 py-4">
+                    <div className="text-gray-900 font-medium">
+                      {b?.passenger?.nic || "—"}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-gray-900">
+                      <div className="font-medium">{b?.pickup || "—"}</div>
+                      <div className="text-sm text-gray-600">
+                        {b?.drop || "—"}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
                     <Badge
                       tone={
                         b?.status === "Confirmed"
@@ -428,27 +563,42 @@ export default function BookingHistory() {
                       {b?.status || "—"}
                     </Badge>
                   </td>
-                  <td className="px-5 py-3 text-xs text-slate-700">
+                  <td className="px-6 py-4 text-sm text-gray-700">
                     {new Date(b.createdAt).toLocaleString()}
                   </td>
-                  <td className="px-5 py-3">
-                    {b?.status === "Cancelled" ? (
-                      <span className="text-xs text-slate-500">
-                        Already cancelled
-                      </span>
-                    ) : (
-                      <CancelCell booking={b} onCancelled={reload} />
-                    )}
+                  <td className="px-6 py-4 text-sm text-gray-700">
+                    {b?.status === "Cancelled"
+                      ? b?.reason ||
+                        b?.cancellationReason ||
+                        b?.cancelReason ||
+                        "No reason provided"
+                      : "Booking confirmed — no cancellation reason"}
                   </td>
+                  {anyCancellable && (
+                    <td className="px-6 py-4">
+                      {b?.status === "Cancelled" ? (
+                        <span className="text-sm text-gray-500 font-medium">
+                          Cancelled
+                        </span>
+                      ) : (
+                        <CancelCell booking={b} onCancelled={reload} />
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
                   <td
-                    className="px-5 py-8 text-center text-slate-600"
-                    colSpan={9}
+                    colSpan={anyCancellable ? 10 : 9}
+                    className="px-6 py-12 text-center"
                   >
-                    No bookings found with current filters.
+                    <div className="text-gray-500 text-lg font-medium">
+                      No bookings found
+                    </div>
+                    <p className="text-gray-400 mt-2">
+                      Try adjusting your filters
+                    </p>
                   </td>
                 </tr>
               )}
@@ -457,46 +607,28 @@ export default function BookingHistory() {
         </div>
 
         {/* Cards (mobile) */}
-        <div className="grid gap-4 md:hidden">
+        <div className="grid gap-4 lg:hidden">
           {rows.length === 0 && (
-            <div className={surface + " p-6 text-center text-slate-600"}>
-              No bookings found with current filters.
+            <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+              <div className="text-gray-500 text-lg font-medium mb-2">
+                No bookings found
+              </div>
+              <p className="text-gray-400">Try adjusting your filters</p>
             </div>
           )}
           {rows.map((b) => (
-            <div key={b._id} className={surface + " p-4"}>
-              <div className="mb-1 flex items-center justify-between">
-                <div className="text-sm text-slate-600">Travel Date</div>
-                <div className="font-medium text-slate-900">{b.travelDate}</div>
-              </div>
-              <div className="mb-1 text-sm text-slate-800">
-                {b?.bus?.from || "—"} → {b?.bus?.to || "—"}
-                {b?.bus?.departureTime && (
-                  <span className="ml-1 opacity-60">
-                    ({b.bus.departureTime})
-                  </span>
-                )}
-              </div>
-              <div className="mb-1 text-sm text-slate-800">
-                <span className="font-medium">
-                  {b?.bus?.operatorName || "—"}
-                </span>{" "}
-                <span className="text-xs text-slate-600">
-                  {b?.bus?.plateNo || ""}
-                </span>
-              </div>
-              <div className="mb-1 text-sm text-slate-800">
-                Seats:{" "}
-                {Array.isArray(b.seats) && b.seats.length > 0
-                  ? b.seats.map((s) => s?.number ?? s).join(", ")
-                  : "—"}
-              </div>
-              <div className="mb-1 text-sm text-slate-800">
-                Pickup / Drop: {b?.pickup || "—"} / {b?.drop || "—"}
-              </div>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge tone="amber">{b?.payment || "—"}</Badge>
+            <div
+              key={b._id}
+              className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-md"
+            >
+              <div className="space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-lg">
+                      {b?.bus?.from || "—"} → {b?.bus?.to || "—"}
+                    </h3>
+                    <p className="text-gray-600 text-sm mt-1">{b.travelDate}</p>
+                  </div>
                   <Badge
                     tone={
                       b?.status === "Confirmed"
@@ -508,13 +640,83 @@ export default function BookingHistory() {
                   >
                     {b?.status || "—"}
                   </Badge>
-                  <span className="ml-auto text-xs text-slate-600">
-                    {new Date(b.createdAt).toLocaleString()}
-                  </span>
                 </div>
-                {b?.status !== "Cancelled" && (
-                  <CancelCell booking={b} onCancelled={reload} />
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">Operator:</span>
+                    <p className="text-gray-900">
+                      {b?.bus?.operatorName || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">
+                      Departure:
+                    </span>
+                    <p className="text-gray-900">
+                      {b?.bus?.departureTime || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Seats:</span>
+                    <p className="text-gray-900">
+                      {Array.isArray(b.seats) && b.seats.length > 0
+                        ? b.seats.map((s) => s?.number ?? s).join(", ")
+                        : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">
+                      NIC / Passport:
+                    </span>
+                    <p className="text-gray-900">{b?.passenger?.nic || "—"}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Booked:</span>
+                    <p className="text-gray-900">
+                      {new Date(b.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex justify-between items-center text-sm">
+                    <div>
+                      <span className="font-medium text-gray-700">Pickup:</span>
+                      <p className="text-gray-900">{b?.pickup || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Drop:</span>
+                      <p className="text-gray-900">{b?.drop || "—"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {b?.status === "Cancelled" && (
+                  <div className="border-t border-gray-200 pt-4">
+                    <span className="font-medium text-gray-700 text-sm">
+                      Cancellation Reason:
+                    </span>
+                    <p className="text-gray-900 text-sm mt-1">
+                      {b?.reason ||
+                        b?.cancellationReason ||
+                        b?.cancelReason ||
+                        "No reason provided"}
+                    </p>
+                  </div>
                 )}
+
+                {b?.status !== "Cancelled" &&
+                  (function () {
+                    const departTime = b?.bus?.departureTime || "00:00";
+                    const departAt = toDepartureDate(b?.travelDate, departTime);
+                    const hoursLeft = msUntil(departAt) / 3600000;
+                    return refundPercent(hoursLeft) >= 0 ? (
+                      <div className="border-t border-gray-200 pt-4">
+                        <CancelCell booking={b} onCancelled={reload} />
+                      </div>
+                    ) : null;
+                  })()}
               </div>
             </div>
           ))}

@@ -10,6 +10,7 @@ import {
   ListChecks,
   Bus,
 } from "lucide-react";
+import BusLoader from "../bus/BusLoader";
 import { showTimetableToast } from "./TimetableToast";
 import { getBookingsByBusAndDate } from "../../api/booking";
 
@@ -388,10 +389,12 @@ export default function BusCard({
         {/* Right: price & actions */}
         <div className="w-full md:w-96 border-t md:border-t-0 md:border-l border-slate-200 p-6 flex flex-col items-center justify-center text-center gap-4">
           {loading ? (
-            <div className="flex items-center gap-2 text-slate-400">
-              <RefreshCw className="w-5 h-5 animate-spin" />
-              <span className="text-sm">Checking seats...</span>
-            </div>
+            <BusLoader
+              message="Checking seats..."
+              subtext="Please wait"
+              height="h-28"
+              className="w-44"
+            />
           ) : isFilteredMode && !filtersValid ? (
             <div className="text-sm text-slate-600">
               Enter valid <span className="font-medium">From</span>,{" "}
