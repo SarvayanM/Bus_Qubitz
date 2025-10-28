@@ -1,3 +1,4 @@
+// src/components/Navbar.jsx
 import React, { useState, useEffect, useContext, useCallback } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -10,7 +11,6 @@ import {
 } from "react-icons/fa";
 import { HiMenuAlt3, HiX } from "react-icons/hi";
 import { motion, AnimatePresence } from "framer-motion";
-
 import RoleContext from "./RoleContext";
 import Cookies from "js-cookie";
 import { getPassengerByPhone } from "../../api/passenger";
@@ -18,19 +18,45 @@ import { getPassengerByPhone } from "../../api/passenger";
 export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [passengerName, setPassengerName] = useState("");
   const [passengerFirstName, setPassengerFirstName] = useState("");
   const [loadingProfile, setLoadingProfile] = useState(false);
   const { userRole, setUserRole } = useContext(RoleContext);
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Header shadow on scroll
+  // Scroll shadow
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 10);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  const fetchProfile = useCallback(async () => {
+    const phone = Cookies.get("phone");
+    if (!phone || userRole !== "passenger") return;
+    setLoadingProfile(true);
+    try {
+      const p = await getPassengerByPhone(phone);
+      if (p?.fname) setPassengerFirstName(p.fname);
+    } catch {
+      // silent
+    } finally {
+      setLoadingProfile(false);
+    }
+  }, [userRole]);
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
+  const doLogout = () => {
+    Cookies.remove("phone");
+    Cookies.remove("phone_verified");
+    localStorage.removeItem("role");
+    setUserRole("");
+    setPassengerFirstName("");
+    navigate("/");
+  };
 
   const navItems = [
     { path: "/", label: "Home", icon: <FaHome className="text-lg" /> },
@@ -51,224 +77,75 @@ export default function Navbar() {
     },
   ];
 
-  // --- Extracted: fetch profile (same logic), so we can reuse it on multiple triggers
-  const fetchAndSetProfile = useCallback(async () => {
-    setPassengerName("");
-    setPassengerFirstName("");
-    const phone = Cookies.get("phone");
-    if (!userRole || userRole !== "passenger" || !phone) return;
-    setLoadingProfile(true);
-    let mounted = true;
-    try {
-      const p = await getPassengerByPhone(phone);
-      if (mounted && p) {
-        const full =
-          `${p.fname || ""}${p.lname ? " " + p.lname : ""}`.trim() || phone;
-        setPassengerName(full);
-        const first =
-          (p.fname && String(p.fname).trim()) || full.split(" ")[0] || "";
-        setPassengerFirstName(first);
-      }
-    } catch {
-      // silent
-    } finally {
-      if (mounted) setLoadingProfile(false);
-    }
-    return () => {
-      mounted = false;
-    };
-  }, [userRole]);
-
-  // Initial load (same behavior as before, just using the shared function)
-  useEffect(() => {
-    fetchAndSetProfile();
-  }, [fetchAndSetProfile]);
-
-  // Re-fetch whenever the route changes (e.g., after creating profile / first booking)
-  useEffect(() => {
-    if (userRole === "passenger") {
-      fetchAndSetProfile();
-    }
-  }, [location.pathname, userRole, fetchAndSetProfile]);
-
-  // Re-fetch when tab gains focus or becomes visible (user returns to the app)
-  useEffect(() => {
-    const onFocus = () => {
-      if (userRole === "passenger" && !passengerFirstName) {
-        fetchAndSetProfile();
-      }
-    };
-    const onVisibility = () => {
-      if (
-        document.visibilityState === "visible" &&
-        userRole === "passenger" &&
-        !passengerFirstName
-      ) {
-        fetchAndSetProfile();
-      }
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [userRole, passengerFirstName, fetchAndSetProfile]);
-
-  // Gentle polling while first name is missing; auto-stops once found
-  useEffect(() => {
-    if (userRole !== "passenger" || passengerFirstName) return;
-    const id = setInterval(() => {
-      fetchAndSetProfile();
-    }, 20000); // 20s cadence; low overhead
-    return () => clearInterval(id);
-  }, [userRole, passengerFirstName, fetchAndSetProfile]);
-
-  const closeMobileMenu = () => setIsMobileMenuOpen(false);
-
-  // Animations
-  const navVariants = {
-    hidden: { y: -100, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        type: "spring",
-        stiffness: 100,
-        damping: 20,
-        duration: 0.5,
-      },
-    },
-  };
-  const mobileMenuVariants = {
-    closed: { opacity: 0, x: "100%", transition: { duration: 0.25 } },
-    open: {
-      opacity: 1,
-      x: 0,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 30,
-        duration: 0.35,
-      },
-    },
-  };
-  const itemVariants = {
-    closed: { x: 12, opacity: 0 },
-    open: (i) => ({
-      x: 0,
-      opacity: 1,
-      transition: { delay: i * 0.08, duration: 0.25 },
-    }),
-  };
-
-  // Common logout action
-  const doLogout = () => {
-    Cookies.remove("phone");
-    Cookies.remove("phone_verified");
-    localStorage.removeItem("role");
-    setUserRole("");
-    setPassengerName("");
-    setPassengerFirstName("");
-    closeMobileMenu();
-    navigate("/");
-  };
+  if (userRole === "passenger") {
+    navItems.push({
+      path: "/bookingHistory",
+      label: "Booking History",
+      icon: <FaInfoCircle className="text-lg" />,
+    });
+  }
 
   return (
     <motion.header
-      className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 bg-white ${
+      className={`fixed top-0 inset-x-0 z-50 bg-white transition-all duration-300 ${
         isScrolled ? "shadow-lg" : "shadow-sm"
       }`}
-      initial="hidden"
-      animate="visible"
-      variants={navVariants}
-      role="banner"
+      initial={{ y: -80, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Top Row: Left = Logo, Middle = Nav, Right = Profile cluster */}
-        <div className="flex h-16 items-center">
-          {/* Left: Brand (logo locked to far left) */}
-          <motion.div
-            className="flex items-center gap-3"
-            whileHover={{ scale: 1.03 }}
-            transition={{ type: "spring", stiffness: 400 }}
-          >
-            <Link
-              to="/"
-              className="flex items-center gap-3"
-              onClick={closeMobileMenu}
-            >
-              <div className="p-2 rounded-xl bg-white flex items-center justify-center ">
-                <img
-                  src="src/assets/images/bus-logo-2.png"
-                  alt="Bus Logo"
-                  className="w-15 h-12 object-contain"
-                />
-              </div>
-              <span className="text-2xl font-bold text-blue-900">
-                BookMyBus
-              </span>
-            </Link>
-          </motion.div>
+        {/* Outer container: left (logo), center (nav), right (actions) */}
+        <div className="flex items-center justify-between h-16 w-full">
+          {/* Left: Logo */}
+          <Link to="/" className="flex items-center gap-2">
+            <img
+              src="src/assets/images/bus-logo-2.png"
+              alt="Bus Logo"
+              className="w-12 h-10 object-contain"
+            />
+            <span className="text-2xl font-bold text-blue-900 tracking-tight">
+              BookMyBus
+            </span>
+          </Link>
 
-          {/* Center: Desktop Navigation (all other elements) */}
-          <nav className="hidden md:flex items-center gap-1 ml-6 flex-1">
-            {(() => {
-              const items = [...navItems];
-              if (userRole === "passenger") {
-                items.push({
-                  path: "/bookingHistory",
-                  label: "Booking History",
-                  icon: <FaInfoCircle className="text-lg" />,
-                });
-              }
-              return items.map((item) => (
-                <motion.div
-                  key={item.path}
-                  whileHover={{ y: -2 }}
-                  transition={{ type: "spring", stiffness: 400 }}
-                >
-                  <NavLink
-                    to={item.path}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-200 cursor-pointer ${
-                        isActive
-                          ? "bg-blue-900 text-white"
-                          : "text-slate-900 hover:bg-blue-100"
-                      }`
-                    }
-                  >
-                    {item.icon}
-                    <span className="font-semibold">{item.label}</span>
-                  </NavLink>
-                </motion.div>
-              ));
-            })()}
+          {/* Center: Navigation Links */}
+          <nav className="hidden md:flex items-center justify-center gap-1 flex-1">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                    isActive
+                      ? "bg-blue-900 text-white"
+                      : "text-slate-900 hover:bg-blue-100"
+                  }`
+                }
+              >
+                {item.icon}
+                {item.label}
+              </NavLink>
+            ))}
           </nav>
 
-          {/* Right: Passenger first name + profile icon (click to profile) + logout */}
-          <div className="ml-auto hidden md:flex items-center gap-3">
+          {/* Right: Profile / Auth */}
+          <div className="hidden md:flex items-center gap-3">
             {userRole === "passenger" ? (
               <>
                 <span className="text-sm font-semibold text-slate-900">
                   {loadingProfile ? "..." : passengerFirstName || "Profile"}
                 </span>
-
                 <button
-                  type="button"
                   onClick={() => navigate("/updateProfile")}
-                  className="p-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 hover:bg-blue-100 transition cursor-pointer"
-                  aria-label="Open profile"
-                  title="Profile"
+                  className="p-2 rounded-lg bg-slate-100 hover:bg-blue-100 ring-1 ring-slate-200 transition"
+                  aria-label="Profile"
                 >
-                  <FaUser className="text-lg text-blue-700" />
+                  <FaUser className="text-blue-700 text-lg" />
                 </button>
-
                 <button
-                  className="flex items-center gap-3 w-full rounded-xl px-4 py-2 text-white font-semibold border border-red-200 bg-red-500 text-white hover:bg-red-400 transition cursor-pointer"
                   onClick={doLogout}
-                  aria-label="Logout"
-                  title="Logout"
+                  className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-400 font-semibold transition"
                 >
                   Logout
                 </button>
@@ -276,165 +153,82 @@ export default function Navbar() {
             ) : (
               <NavLink
                 to="/login"
-                className="ml-2 flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-slate-900 hover:bg-blue-100 transition cursor-pointer"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-slate-900 hover:bg-blue-100 transition"
               >
                 <FaSignInAlt className="text-lg" />
-                <span className="font-semibold">Login</span>
+                Login
               </NavLink>
             )}
-
-            {/* Mobile Menu Button (visible only on small screens; hidden on md+) */}
-            <motion.button
-              className="md:hidden p-2 rounded-lg text-slate-900 hover:bg-slate-100 transition-colors duration-200"
-              onClick={() => setIsMobileMenuOpen((v) => !v)}
-              whileTap={{ scale: 0.95 }}
-              aria-expanded={isMobileMenuOpen}
-              aria-controls="mobile-menu"
-              aria-label="Toggle navigation menu"
-            >
-              {isMobileMenuOpen ? (
-                <HiX className="text-2xl" />
-              ) : (
-                <HiMenuAlt3 className="text-2xl" />
-              )}
-            </motion.button>
           </div>
 
-          {/* On mobile, keep the hamburger on the far right */}
-          <motion.button
-            className="md:hidden ml-auto p-2 rounded-lg text-slate-900 hover:bg-slate-100 transition-colors duration-200"
-            onClick={() => setIsMobileMenuOpen((v) => !v)}
-            whileTap={{ scale: 0.95 }}
-            aria-expanded={isMobileMenuOpen}
-            aria-controls="mobile-menu"
-            aria-label="Toggle navigation menu"
+          {/* Mobile Menu Button */}
+          <button
+            className="md:hidden p-2 rounded-lg text-slate-900 hover:bg-slate-100 transition"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
             {isMobileMenuOpen ? (
               <HiX className="text-2xl" />
             ) : (
               <HiMenuAlt3 className="text-2xl" />
             )}
-          </motion.button>
+          </button>
         </div>
       </div>
 
-      {/* Mobile Fullscreen Navigation */}
+      {/* Mobile Menu */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.nav
-            id="mobile-menu"
-            className="fixed inset-0 z-40 md:hidden bg-white"
-            variants={mobileMenuVariants}
-            initial="closed"
-            animate="open"
-            exit="closed"
-            role="dialog"
-            aria-modal="true"
+            className="md:hidden bg-white border-t border-slate-200 shadow-lg"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
           >
-            {/* Top bar inside the sheet */}
-            <div className="flex items-center justify-between h-16 px-4 border-b border-blue-200">
-              <span className="sr-only">Mobile navigation</span>
-              <button
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="ml-auto p-2 rounded-lg text-slate-900 hover:bg-blue-100 transition-colors cursor-pointer"
-                aria-label="Close navigation menu"
-              >
-                <HiX className="text-2xl" />
-              </button>
-            </div>
-
-            {/* Menu Items */}
-            <div className="bg-white px-4 py-6">
-              <div className="space-y-2">
-                {(() => {
-                  const items = [...navItems];
-                  if (userRole === "passenger") {
-                    items.push({
-                      path: "/bookingHistory",
-                      label: "Booking History",
-                      icon: <FaInfoCircle className="text-lg" />,
-                    });
+            <div className="flex flex-col p-4 space-y-3">
+              {navItems.map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-xl px-4 py-3 font-semibold ${
+                      isActive
+                        ? "bg-blue-900 text-white"
+                        : "bg-slate-50 text-slate-900 hover:bg-blue-50"
+                    }`
                   }
-                  return items.map((item, index) => (
-                    <motion.div
-                      key={item.path}
-                      custom={index}
-                      variants={itemVariants}
-                      initial="closed"
-                      animate="open"
-                    >
-                      <NavLink
-                        to={item.path}
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className={({ isActive }) =>
-                          [
-                            "flex items-center gap-3 w-full rounded-xl px-4 py-4 text-base font-semibold border cursor-pointer",
-                            "focus:outline-none focus:ring-2 focus:ring-blue-200",
-                            isActive
-                              ? "bg-blue-900 text-white border-blue-900"
-                              : "bg-white text-slate-900 hover:bg-blue-50 border-slate-200",
-                          ].join(" ")
-                        }
-                      >
-                        <span
-                          className={`text-lg ${
-                            location.pathname === item.path
-                              ? "opacity-100"
-                              : "opacity-70"
-                          }`}
-                        >
-                          {item.icon}
-                        </span>
-                        <span>{item.label}</span>
-                      </NavLink>
-                    </motion.div>
-                  ));
-                })()}
-              </div>
-
-              {/* Mobile Auth Area */}
-              <div className="mt-6 border-t border-slate-200 pt-6">
-                {userRole === "passenger" ? (
-                  <div className="space-y-3">
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        navigate("/updateProfile");
-                      }}
-                      className="flex items-center gap-3 w-full rounded-xl px-4 py-3 border border-slate-200 bg-slate-50 hover:bg-blue-50 transition cursor-pointer"
-                      aria-label="Open profile"
-                      title="Profile"
-                    >
-                      <FaUser className="text-lg text-blue-700" />
-                      <div className="font-semibold text-sm text-slate-900">
-                        {loadingProfile
-                          ? "..."
-                          : passengerFirstName || "Profile"}
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        doLogout();
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 w-full rounded-xl px-4 py-2 text-white font-semibold border border-red-200 bg-red-500 text-white hover:bg-red-400 transition cursor-pointer"
-                    >
-                      <FaSignOutAlt />
-                      Logout
-                    </button>
-                  </div>
-                ) : (
-                  <NavLink
-                    to="/login"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="flex items-center gap-3 w-full rounded-xl px-4 py-4 text-base font-semibold border border-slate-200 bg-white text-slate-900 hover:bg-blue-50 transition cursor-pointer"
+                >
+                  {item.icon}
+                  {item.label}
+                </NavLink>
+              ))}
+              {userRole === "passenger" ? (
+                <>
+                  <button
+                    onClick={() => navigate("/updateProfile")}
+                    className="flex items-center gap-3 rounded-xl px-4 py-3 font-semibold bg-slate-50 hover:bg-blue-50"
                   >
-                    <FaSignInAlt />
-                    Login
-                  </NavLink>
-                )}
-              </div>
+                    <FaUser className="text-blue-700" />
+                    {loadingProfile ? "..." : passengerFirstName || "Profile"}
+                  </button>
+                  <button
+                    onClick={doLogout}
+                    className="flex items-center gap-3 rounded-xl px-4 py-3 font-semibold text-white bg-red-500 hover:bg-red-400"
+                  >
+                    <FaSignOutAlt />
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <NavLink
+                  to="/login"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 font-semibold bg-slate-50 hover:bg-blue-50"
+                >
+                  <FaSignInAlt />
+                  Login
+                </NavLink>
+              )}
             </div>
           </motion.nav>
         )}
