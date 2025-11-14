@@ -9,7 +9,6 @@ import {
   safeSeatsCount,
 } from "../utils/serverTime.js";
 
-
 export async function cancelBooking(req, res) {
   try {
     const { id } = req.params;
@@ -19,7 +18,8 @@ export async function cancelBooking(req, res) {
 
     const booking = await Booking.findById(id).populate({
       path: "busId",
-      select: "price schedule departure busNo busName route operatorName plateNo from to",
+      select:
+        "price schedule departure busNo busName route operatorName plateNo from to",
     });
 
     if (!booking) return res.status(404).json({ message: "Booking not found" });
@@ -27,9 +27,15 @@ export async function cancelBooking(req, res) {
       return res.status(400).json({ message: "Already cancelled" });
     }
 
-    const passengerPhone = get(booking, "passenger.phone", "");
+    const passengerPhone = get(
+      booking,
+      "passenger.contactNo",
+      get(booking, "passenger.phone", "")
+    );
     if (!passengerPhone) {
-      return res.status(400).json({ message: "No passenger phone on booking" });
+      return res
+        .status(400)
+        .json({ message: "No passenger contact number on booking" });
     }
     if (!booking.travelDate) {
       return res.status(500).json({ message: "Booking travelDate missing" });
@@ -49,7 +55,9 @@ export async function cancelBooking(req, res) {
     const pct = refundPercent(hoursBefore);
 
     if (pct < 0) {
-      return res.status(400).json({ message: "Cancellation window has passed (< 4 hours)" });
+      return res
+        .status(400)
+        .json({ message: "Cancellation window has passed (< 4 hours)" });
     }
 
     // ---- determine base price ----
@@ -57,7 +65,8 @@ export async function cancelBooking(req, res) {
     const busPrice = parseMoneyToNumber(rawBusPrice);
     if (Number.isNaN(busPrice) || busPrice <= 0) {
       return res.status(400).json({
-        message: "Bus price is invalid or missing; cannot compute refund for cancellation.",
+        message:
+          "Bus price is invalid or missing; cannot compute refund for cancellation.",
         debug: { rawBusPrice },
       });
     }
@@ -82,7 +91,8 @@ export async function cancelBooking(req, res) {
 
     // ---- credit wallet ----
     const passenger = await Passenger.findOne({ phone: passengerPhone });
-    if (!passenger) return res.status(404).json({ message: "Passenger not found" });
+    if (!passenger)
+      return res.status(404).json({ message: "Passenger not found" });
 
     const currentWallet = parseMoneyToNumber(passenger.walletBalance);
     const safeWallet = Number.isNaN(currentWallet) ? 0 : currentWallet;
@@ -92,8 +102,11 @@ export async function cancelBooking(req, res) {
     // ---- BUILD SNAPSHOT (critical: never undefined) ----
     const bookingSnapshot = {
       travelDate: booking.travelDate || null,
-      departureTime: booking.departureTime || get(booking, "bus.schedule.departure") || null,
-      seats: Array.isArray(booking.seats) ? booking.seats.map((s) => (typeof s === "object" ? { ...s } : s)) : [],
+      departureTime:
+        booking.departureTime || get(booking, "bus.schedule.departure") || null,
+      seats: Array.isArray(booking.seats)
+        ? booking.seats.map((s) => (typeof s === "object" ? { ...s } : s))
+        : [],
       pickup: booking.pickup || null,
       drop: booking.drop || null,
       payment: booking.payment || null,
@@ -109,7 +122,11 @@ export async function cancelBooking(req, res) {
       bus: {
         from: get(booking, "bus.from", get(busDoc, "from", null)),
         to: get(booking, "bus.to", get(busDoc, "to", null)),
-        operatorName: get(booking, "bus.operatorName", get(busDoc, "operatorName", null)),
+        operatorName: get(
+          booking,
+          "bus.operatorName",
+          get(busDoc, "operatorName", null)
+        ),
         plateNo: get(booking, "bus.plateNo", get(busDoc, "plateNo", null)),
         busNo: get(booking, "bus.busNo", get(busDoc, "busNo", null)),
         busName: get(booking, "bus.busName", get(busDoc, "busName", null)),
@@ -119,7 +136,11 @@ export async function cancelBooking(req, res) {
           to: get(busDoc, "route.to", get(booking, "bus.route.to", null)),
         },
         schedule: {
-          departure: get(busDoc, "schedule.departure", get(booking, "bus.schedule.departure", null)),
+          departure: get(
+            busDoc,
+            "schedule.departure",
+            get(booking, "bus.schedule.departure", null)
+          ),
         },
         departureTime: get(booking, "bus.departureTime", null),
       },
@@ -127,8 +148,13 @@ export async function cancelBooking(req, res) {
 
     // Hard guard: if for any reason bookingSnapshot is falsy
     if (!bookingSnapshot || typeof bookingSnapshot !== "object") {
-      console.error("cancelBooking: bookingSnapshot missing/invalid", { id, reason });
-      return res.status(500).json({ message: "Internal error: booking snapshot failed" });
+      console.error("cancelBooking: bookingSnapshot missing/invalid", {
+        id,
+        reason,
+      });
+      return res
+        .status(500)
+        .json({ message: "Internal error: booking snapshot failed" });
     }
 
     // ---- store cancelled booking (with snapshot) ----

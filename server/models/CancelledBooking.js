@@ -14,10 +14,6 @@ const PassengerSnapshotSchema = new mongoose.Schema(
 
 const BusSnapshotSchema = new mongoose.Schema(
   {
-    from: String,
-    to: String,
-    operatorName: String,
-    plateNo: String,
     busNo: String,
     busName: String,
     price: mongoose.Schema.Types.Mixed,
@@ -28,7 +24,6 @@ const BusSnapshotSchema = new mongoose.Schema(
     schedule: {
       departure: String,
     },
-    departureTime: String,
   },
   { _id: false }
 );
@@ -36,7 +31,7 @@ const BusSnapshotSchema = new mongoose.Schema(
 const BookingSnapshotSchema = new mongoose.Schema(
   {
     travelDate: { type: String }, // "YYYY-MM-DD"
-    departureTime: { type: String }, // "HH:mm"
+
     seats: [{ type: mongoose.Schema.Types.Mixed }],
     pickup: String,
     drop: String,

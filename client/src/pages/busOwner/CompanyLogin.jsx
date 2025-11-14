@@ -8,6 +8,9 @@ import { getDoc, doc } from "firebase/firestore";
 import RoleContext from "../../components/common/RoleContext";
 import { getCompanyIdByEmail } from "../../api/company";
 
+/** Optional: point this to your hero image asset (the bus photo). */
+const HERO_IMG = "src/assets/images/bus-login.jpeg"; // e.g., /public/assets/hero-bus.jpg — replace with your path
+
 function CompanyLogin() {
   const navigate = useNavigate();
   const { setUserRole } = useContext(RoleContext);
@@ -98,186 +101,180 @@ function CompanyLogin() {
 
   return (
     <>
-      <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] px-4 py-8">
-        {/* Background Pattern */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#2563EB]/5 to-[#16A34A]/5"></div>
+      {/* Split hero layout to mirror the reference image */}
+      <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-white">
+        {/* Left: motion blur hero image (hidden on small screens like the image) */}
+        <div
+          className="relative hidden lg:block"
+          style={{
+            backgroundImage: `url('${HERO_IMG}')`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+          aria-hidden="true"
+        >
+          {/* subtle dark overlay for contrast (keeps the same feel as the image) */}
+          <div className="absolute inset-0 bg-black/20" />
+        </div>
 
-        {/* Login Card */}
-        <div className="relative w-full max-w-md bg-white/80 backdrop-blur-md rounded-2xl shadow-2xl overflow-hidden z-10 border border-[#2563EB]/10">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-[#2563EB]/90 to-[#16A34A]/90 p-8 text-center text-white backdrop-blur-sm">
-            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg
-                className="w-8 h-8 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                />
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
-            <p className="text-white/90 text-lg">
-              Please login to continue your journey
-            </p>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="p-8 space-y-6">
-            {/* Email Field */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Email Address
-              </label>
-              <div className="relative">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
-                  placeholder="your@email.com"
-                  required
-                  autoComplete="email"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <svg
-                    className="h-5 w-5 text-[#2563EB]"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Password Field */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg bg-[#F9FAFB] border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition duration-200"
-                  placeholder="••••••••"
-                  required
-                  autoComplete="current-password"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <svg
-                    className="h-5 w-5 text-[#2563EB]"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                    />
-                  </svg>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 mt-2 bg-[#F9FAFB] p-2 rounded border border-gray-200">
-                Must include: uppercase, lowercase, number, special character
-                (min 8 chars)
+        {/* Right: form column */}
+        <div className="flex items-center justify-center px-6 sm:px-10">
+          <div className="w-full max-w-xl">
+            {/* Title + subtitle exactly like the reference hierarchy */}
+            <div className="text-center mb-8">
+              <h1 className="text-4xl font-bold text-gray-900 mb-3">
+                Drive Your Journey With BookMyBus
+              </h1>
+              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                Take control of your passengers — manage your bus operations
+                with ease
               </p>
             </div>
 
-            {/* Submit Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className={`w-full py-4 px-4 rounded-lg font-semibold text-white transition duration-200 shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] cursor-pointer ${
-                  isSubmitting
-                    ? "bg-gray-400 cursor-not-allowed"
-                    : "bg-gradient-to-r from-[#2563EB] to-[#16A34A] hover:from-[#1d4ed8] hover:to-[#15803d] hover:shadow-xl transform hover:scale-[1.02]"
-                }`}
-              >
-                {isSubmitting ? (
-                  <span className="flex items-center justify-center">
-                    <svg
-                      className="animate-spin h-5 w-5 mr-3 text-white"
-                      viewBox="0 0 24 24"
-                      fill="none"
+            {/* Card with inputs (blue-900 as the primary accent) */}
+            <div className="rounded-2xl border border-gray-200 shadow-sm">
+              <form onSubmit={handleSubmit} className="p-6 sm:p-8">
+                <div className="space-y-6">
+                  {/* Email */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg
+                          className="h-5 w-5 text-blue-900/80"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                          />
+                        </svg>
+                      </span>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full h-12 pl-10 pr-3 rounded-lg border border-gray-300 bg-white placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900/60 focus:border-blue-900/60 transition"
+                        placeholder="your@email.com"
+                        required
+                        autoComplete="email"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg
+                          className="h-5 w-5 text-blue-900/80"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                          />
+                        </svg>
+                      </span>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full h-12 pl-10 pr-3 rounded-lg border border-gray-300 bg-white placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900/60 focus:border-blue-900/60 transition"
+                        placeholder="••••••••"
+                        required
+                        autoComplete="current-password"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Must include: uppercase, lowercase, number, special
+                      character (min 8 chars)
+                    </p>
+                  </div>
+
+                  {/* Submit */}
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className={`w-full h-12 rounded-lg font-semibold text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-900 ${
+                        isSubmitting
+                          ? "bg-blue-900/50 cursor-not-allowed"
+                          : "bg-blue-900 hover:bg-blue-800"
+                      }`}
                     >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.37 0 0 5.37 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Logging in...
-                  </span>
-                ) : (
-                  "Login"
-                )}
-              </button>
-            </div>
+                      {isSubmitting ? (
+                        <span className="flex items-center justify-center">
+                          <svg
+                            className="animate-spin h-5 w-5 mr-3 text-white"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.37 0 0 5.37 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            />
+                          </svg>
+                          Starting...
+                        </span>
+                      ) : (
+                        "Start Journey"
+                      )}
+                    </button>
+                  </div>
+                </div>
 
-            {/* Divider */}
-            <div className="relative py-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-3 bg-white text-gray-500">
-                  Don't have an account?
-                </span>
-              </div>
-            </div>
+                {/* “Need help?” footer, matching the card footer vibe */}
+                <div className="mt-4 text-sm text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowSignupOptions((s) => !s)}
+                    className="text-blue-900 hover:underline"
+                  >
+                    Need help?
+                  </button>
+                </div>
+              </form>
 
-            {/* Action Links */}
-            <div className="flex flex-col sm:flex-row justify-between gap-3 text-center">
-              <button
-                type="button"
-                onClick={() => navigate("/signup")}
-                className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-              >
-                Create an account
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/companyRegister")}
-                className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-              >
-                Register Your Company Here
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/forgotPassword")}
-                className="text-[#2563EB] font-semibold hover:text-[#16A34A] text-sm hover:underline transition duration-200 px-2 py-1 rounded cursor-pointer"
-              >
-                Forgot password?
-              </button>
+              {/* Bottom links styled like lightweight actions under the card */}
+              <div className="px-6 sm:px-8 pb-6">
+                <div className="flex justify-center items-center gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/forgotPassword")}
+                    className="text-blue-900 hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              </div>
             </div>
-          </form>
+          </div>
         </div>
       </div>
+
       <ToastContainer />
     </>
   );

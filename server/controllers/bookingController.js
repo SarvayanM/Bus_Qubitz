@@ -99,10 +99,10 @@ export async function createBooking(req, res) {
     if (!Array.isArray(seats) || seats.length === 0) {
       return res.status(400).json({ message: "seats array is required" });
     }
-    if (!passenger || !passenger.phone) {
+    if (!passenger || !(passenger.contactNo || passenger.phone)) {
       return res
         .status(400)
-        .json({ message: "passenger with phone is required" });
+        .json({ message: "passenger with contactNo (or phone) is required" });
     }
 
     // Normalize / validate seats
@@ -123,7 +123,9 @@ export async function createBooking(req, res) {
     });
 
     // Atomic operation: ensure Passenger exists (create if missing) and create Booking
-    const phone = normalizePhone(passenger.phone);
+    // passenger.contactNo is the traveller's phone (may differ from account phone)
+    const contactNo = normalizePhone(passenger.contactNo || passenger.phone);
+    const accountPhone = normalizePhone(passenger.phone) || null;
 
     let session = null;
     let usedTransaction = false;
@@ -144,15 +146,15 @@ export async function createBooking(req, res) {
     try {
       let doc;
       if (usedTransaction && session) {
-        const existingPassenger = await Passenger.findOne({ phone }).session(
-          session
-        );
+        const existingPassenger = accountPhone
+          ? await Passenger.findOne({ phone: accountPhone }).session(session)
+          : null;
         if (!existingPassenger) {
           try {
             await Passenger.create(
               [
                 {
-                  phone,
+                  phone: accountPhone || contactNo,
                   fname: passenger.fname || "",
                   lname: passenger.lname || "",
                   nic: passenger.nic || "",
@@ -208,7 +210,8 @@ export async function createBooking(req, res) {
               passenger: {
                 fname: passenger.fname || "",
                 lname: passenger.lname || "",
-                phone,
+                contactNo,
+                phone: accountPhone || contactNo,
                 nic: passenger.nic || "",
                 email: passenger.email || "",
               },
@@ -227,11 +230,12 @@ export async function createBooking(req, res) {
         // Fallback: no transactions available. Attempt to create passenger (idempotent) then booking.
         try {
           // create passenger if not exists (race may still cause duplicate key but we'll catch it)
+          const upsertPhone = accountPhone || contactNo;
           await Passenger.findOneAndUpdate(
-            { phone },
+            { phone: upsertPhone },
             {
               $setOnInsert: {
-                phone,
+                phone: upsertPhone,
                 fname: passenger.fname || "",
                 lname: passenger.lname || "",
                 nic: passenger.nic || "",
@@ -278,7 +282,8 @@ export async function createBooking(req, res) {
           passenger: {
             fname: passenger.fname || "",
             lname: passenger.lname || "",
-            phone,
+            contactNo,
+            phone: accountPhone || contactNo,
             nic: passenger.nic || "",
             email: passenger.email || "",
           },
@@ -411,8 +416,12 @@ export const getPassengerBookingHistory = async (req, res) => {
     }
 
     const bookings = await Booking.aggregate([
-      // Match by passenger.phone (exact string match after normalization)
-      { $match: { "passenger.phone": phone } },
+      // Match by passenger.phone OR passenger.contactNo (exact string match after normalization)
+      {
+        $match: {
+          $or: [{ "passenger.phone": phone }, { "passenger.contactNo": phone }],
+        },
+      },
       { $sort: { createdAt: -1 } },
 
       // Normalize busId to ObjectId when stored as string
@@ -526,8 +535,12 @@ export async function getHistory(req, res) {
     if (!phone) return res.status(400).json({ message: "phone is required" });
 
     const bookings = await Booking.aggregate([
-      // Match by passenger.phone (exact string match after normalization)
-      { $match: { "passenger.phone": phone } },
+      // Match by passenger.phone OR passenger.contactNo (exact string match after normalization)
+      {
+        $match: {
+          $or: [{ "passenger.phone": phone }, { "passenger.contactNo": phone }],
+        },
+      },
       { $sort: { createdAt: -1 } },
 
       // Normalize busId to ObjectId when stored as string
@@ -665,6 +678,12 @@ function get(obj, path, fallback = undefined) {
   }
 }
 
+// Assumes you already import these elsewhere:
+// import Booking from "../models/Booking.js";
+// import Passenger from "../models/Passenger.js";
+// import CancelledBooking from "../models/CancelledBooking.js";
+// import { toDepartureDate, refundPercent, parseMoneyToNumber, safeSeatsCount } from "../utils/timeMoney.js";
+
 export async function cancelBooking(req, res) {
   try {
     const { id } = req.params;
@@ -674,10 +693,10 @@ export async function cancelBooking(req, res) {
       return res.status(400).json({ message: "reason is required" });
     }
 
+    // Only select fields we actually use for the snapshot/meta
     const booking = await Booking.findById(id).populate({
       path: "busId",
-      select:
-        "price schedule departure busNo busName route operatorName plateNo from to",
+      select: "price schedule departure busNo busName route",
     });
 
     if (!booking) return res.status(404).json({ message: "Booking not found" });
@@ -685,7 +704,7 @@ export async function cancelBooking(req, res) {
       return res.status(400).json({ message: "Already cancelled" });
     }
 
-    const passengerPhone = get(booking, "passenger.phone", "");
+    const passengerPhone = booking?.passenger?.phone || "";
     if (!passengerPhone) {
       return res.status(400).json({ message: "No passenger phone on booking" });
     }
@@ -693,13 +712,12 @@ export async function cancelBooking(req, res) {
       return res.status(500).json({ message: "Booking travelDate missing" });
     }
 
-    // ---- refund window calc ----
+    // ---- refund window calc (uses only fields supported by model/snapshot) ----
     const busDoc = booking.busId;
     const departTime =
-      booking.departureTime ||
-      get(booking, "bus.departureTime") ||
-      get(busDoc, "schedule.departure") ||
-      get(busDoc, "departure") ||
+      booking?.departureTime || // in case your Booking has this denormalized
+      busDoc?.schedule?.departure ||
+      busDoc?.departure ||
       "00:00";
 
     const departAt = toDepartureDate(booking.travelDate, departTime);
@@ -713,7 +731,7 @@ export async function cancelBooking(req, res) {
     }
 
     // ---- price & refund calc ----
-    const rawBusPrice = get(busDoc, "price", get(booking, "bus.price"));
+    const rawBusPrice = busDoc?.price;
     const busPrice = parseMoneyToNumber(rawBusPrice);
     if (Number.isNaN(busPrice) || busPrice <= 0) {
       return res.status(400).json({
@@ -750,11 +768,10 @@ export async function cancelBooking(req, res) {
     passenger.walletBalance = safeWallet + refundedAmount;
     await passenger.save();
 
-    // ---- BUILD BOOKING SNAPSHOT (MUST NOT BE UNDEFINED) ----
+    // ---- BUILD BOOKING SNAPSHOT (matches CancelledBooking.BookingSnapshotSchema) ----
     const bookingSnapshot = {
       travelDate: booking.travelDate || null,
-      departureTime:
-        booking.departureTime || get(booking, "bus.schedule.departure") || null,
+
       seats: Array.isArray(booking.seats)
         ? booking.seats.map((s) => (typeof s === "object" ? { ...s } : s))
         : [],
@@ -765,41 +782,28 @@ export async function cancelBooking(req, res) {
       status: "Cancelled",
 
       passenger: {
-        fname: get(booking, "passenger.fname", null),
-        lname: get(booking, "passenger.lname", null),
+        fname: booking?.passenger?.fname ?? null,
+        lname: booking?.passenger?.lname ?? null,
         phone: passengerPhone,
-        nic: get(booking, "passenger.nic", null),
-        email: get(booking, "passenger.email", null),
+        nic: booking?.passenger?.nic ?? null,
+        email: booking?.passenger?.email ?? null,
       },
 
       bus: {
-        from: get(booking, "bus.from", get(busDoc, "from", null)),
-        to: get(booking, "bus.to", get(busDoc, "to", null)),
-        operatorName: get(
-          booking,
-          "bus.operatorName",
-          get(busDoc, "operatorName", null)
-        ),
-        plateNo: get(booking, "bus.plateNo", get(busDoc, "plateNo", null)),
-        busNo: get(booking, "bus.busNo", get(busDoc, "busNo", null)),
-        busName: get(booking, "bus.busName", get(busDoc, "busName", null)),
-        price: get(busDoc, "price", get(booking, "bus.price", null)),
+        busNo: busDoc?.busNo ?? null,
+        busName: busDoc?.busName ?? null,
+        price: busDoc?.price ?? null,
         route: {
-          from: get(busDoc, "route.from", get(booking, "bus.route.from", null)),
-          to: get(busDoc, "route.to", get(booking, "bus.route.to", null)),
+          from: busDoc?.route?.from ?? null,
+          to: busDoc?.route?.to ?? null,
         },
         schedule: {
-          departure: get(
-            busDoc,
-            "schedule.departure",
-            get(booking, "bus.schedule.departure", null)
-          ),
+          departure: busDoc?.schedule?.departure ?? null,
         },
-        departureTime: get(booking, "bus.departureTime", null),
       },
     };
 
-    // ---- HARD GUARD: snapshot must exist ----
+    // ---- HARD GUARD: snapshot must exist & contain required subdocs ----
     if (
       !bookingSnapshot ||
       typeof bookingSnapshot !== "object" ||
@@ -812,8 +816,8 @@ export async function cancelBooking(req, res) {
         preview: {
           travelDate: bookingSnapshot?.travelDate,
           passengerPhone,
-          busFrom: bookingSnapshot?.bus?.from,
-          busTo: bookingSnapshot?.bus?.to,
+          busFrom: bookingSnapshot?.bus?.route?.from,
+          busTo: bookingSnapshot?.bus?.route?.to,
         },
       });
       return res
@@ -821,21 +825,21 @@ export async function cancelBooking(req, res) {
         .json({ message: "Internal error: booking snapshot failed" });
     }
 
-    // ---- PERSIST CANCELLED SNAPSHOT ----
+    // ---- PERSIST CANCELLED SNAPSHOT (fields aligned with model) ----
     const cancelledDoc = await CancelledBooking.create({
       passengerPhone,
       reason,
       refundPercent: pct,
       refundedAmount,
-      processedAt: new Date(),
-      booking: bookingSnapshot, // <-- REQUIRED SUBDOC
+      // processedAt omitted; model sets default
+      booking: bookingSnapshot,
       meta: {
         travelDate: booking.travelDate,
         departTime,
-        busId: get(booking, "busId._id"),
         busPrice,
         seatsCount,
         baseAmount,
+        busId: busDoc?._id || null,
       },
     });
 

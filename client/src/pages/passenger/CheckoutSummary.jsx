@@ -91,7 +91,7 @@ export default function CheckoutSummary() {
       Array.isArray(seats) &&
       seats.length > 0 &&
       passenger &&
-      passenger.phone
+      (passenger.contactNo || passenger.phone)
     );
   }, [from, to, date, bus, seats, passenger]);
 
@@ -147,6 +147,9 @@ export default function CheckoutSummary() {
       passenger: {
         fname: passenger.fname || "",
         lname: passenger.lname || "",
+        // contactNo is the phone number for the traveller (may differ from account phone)
+        contactNo: passenger.contactNo || passenger.phone || "",
+        // keep account phone for backwards compatibility
         phone: passenger.phone || "",
         nic: passenger.nic || "",
         email: passenger.email || "",
@@ -162,8 +165,8 @@ export default function CheckoutSummary() {
       toast.error("Unable to identify this bus. Please reselect your trip.");
       return;
     }
-    if (!payload.passenger.phone) {
-      toast.error("Passenger phone number is required.");
+    if (!payload.passenger.contactNo) {
+      toast.error("Contact number for traveller is required.");
       return;
     }
     if (!payload.seats?.length) {
@@ -376,7 +379,29 @@ export default function CheckoutSummary() {
                       }`.trim()}
                       icon={User2}
                     />
-                    <Item label="Phone" value={passenger.phone} icon={Phone} />
+                    <div className="flex items-center justify-between py-2">
+                      <div className="flex items-center gap-2 text-gray-700">
+                        <Phone className="h-4 w-4" />
+                        <span className="text-sm font-medium tracking-wide">
+                          Account Phone
+                        </span>
+                      </div>
+                      <span className="font-semibold text-gray-900 text-sm">
+                        {passenger.phone || "-"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-2">
+                      <div className="flex items-center gap-2 text-gray-700">
+                        <Phone className="h-4 w-4" />
+                        <span className="text-sm font-medium tracking-wide">
+                          Contact No
+                        </span>
+                      </div>
+                      <span className="font-semibold text-gray-900 text-sm">
+                        {passenger.contactNo || passenger.phone || "-"}
+                      </span>
+                    </div>
                     <Item
                       label="NIC / Passport"
                       value={passenger.nic}

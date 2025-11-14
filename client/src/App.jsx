@@ -26,10 +26,10 @@ import BookingHistory from "./pages/passenger/BookingHistory";
 import SelectedBusDetails from "./pages/passenger/SelectedBusDetails";
 import CheckoutSummary from "./pages/passenger/CheckoutSummary";
 
-import AddBus from "./pages/busOwner/AddBus";
-import CompanyRegister from "./pages/busOwner/CompanyRegister";
+import AddBus from "./pages/admin/AddBus";
+import CompanyRegister from "./pages/admin/CompanyRegister";
 import BusBookingHistory from "./pages/busOwner/BusBookingHistory";
-import ManageBuses from "./pages/busOwner/ManageBuses";
+import ManageBuses from "./pages/admin/ManageBuses";
 
 import CompanyHistory from "./pages/admin/CompanyHistory";
 import CompanyLogin from "./pages/busOwner/CompanyLogin";

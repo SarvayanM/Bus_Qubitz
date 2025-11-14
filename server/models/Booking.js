@@ -16,9 +16,14 @@ const BookingSchema = new mongoose.Schema(
     passenger: {
       fname: { type: String, required: true },
       lname: { type: String, required: true },
-      phone: {
+      // contactNo is the traveller's phone number (may differ from account phone)
+      contactNo: {
         type: String,
         required: true,
+      },
+      // account phone (optional, kept for backward compatibility)
+      phone: {
+        type: String,
       },
       nic: { type: String, default: "" },
       email: { type: String, default: "" },
@@ -36,6 +41,6 @@ const BookingSchema = new mongoose.Schema(
 );
 
 // in Booking schema file, after schema definition:
-BookingSchema.index({ "passenger.phone": 1, createdAt: -1 });
+BookingSchema.index({ "passenger.contactNo": 1, createdAt: -1 });
 
 export default mongoose.model("Booking", BookingSchema);

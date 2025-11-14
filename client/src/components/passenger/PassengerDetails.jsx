@@ -18,6 +18,7 @@ export default function PassengerDetails({
     fname: "",
     lname: "",
     phone: "", // E.164 from PhoneAuth
+    contactNo: "", // traveller contact number (may differ from verified phone)
     nic: "",
     email: "",
     pickup: "",
@@ -52,6 +53,10 @@ export default function PassengerDetails({
         : "Enter a valid last name.",
     phone: (v) =>
       v && /^\+\d{6,15}$/.test(v) ? "" : "Verified phone is missing/invalid.",
+    contactNo: (v) =>
+      v && /^\+\d{6,15}$/.test(v)
+        ? ""
+        : "Enter a valid contact number (E.164, e.g. +94123456789).",
     nic: (v) => {
       if (!v) return ""; // optional
       const s = String(v).trim();
@@ -108,7 +113,12 @@ export default function PassengerDetails({
 
   const handleVerified = async ({ phoneE164, role, passenger }) => {
     // Set the verified phone for booking
-    setForm((f) => ({ ...f, phone: phoneE164 }));
+    setForm((f) => ({
+      ...f,
+      phone: phoneE164,
+      // default contactNo to verified phone if user hasn't set a separate contact
+      contactNo: f.contactNo || phoneE164,
+    }));
 
     // Prefill names from existing passenger (keep fields editable)
     try {
@@ -132,6 +142,7 @@ export default function PassengerDetails({
     fname: validators.fname(form.fname),
     lname: validators.lname(form.lname),
     phone: validators.phone(form.phone),
+    contactNo: validators.contactNo(form.contactNo),
     email: validators.email(form.email),
     pickup: validators.pickup(form.pickup),
     drop: validators.drop(form.drop),
@@ -237,6 +248,15 @@ export default function PassengerDetails({
           onChange={setField("email")}
           onBlur={onBlur("email")}
           error={errors.email}
+          icon="M3 8l7-5 7 5v6a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"
+        />
+
+        <TextField
+          label="Contact No"
+          value={form.contactNo}
+          onChange={setField("contactNo")}
+          onBlur={onBlur("contactNo")}
+          error={errors.contactNo}
           icon="M3 8l7-5 7 5v6a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"
         />
 
