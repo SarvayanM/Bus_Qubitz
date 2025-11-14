@@ -16,7 +16,7 @@ import Cookies from "js-cookie";
 import { getPassengerByPhone } from "../../api/passenger";
 
 // ✅ Import the logo from src/assets
-import busLogo from "../assets/images/bus-logo-2.png";
+import busLogo from "../../assets/images/bus-logo-2.png";
 
 export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
