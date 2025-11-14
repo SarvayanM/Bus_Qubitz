@@ -14,7 +14,25 @@ import dotenv from "dotenv";
 
 const app = express();
 dotenv.config();
-app.use(cors({ origin: true, credentials: true }));
+// --- CORS ---
+const allowedOrigins = [
+  process.env.CLIENT_URL, // optional: set in Render env vars
+  "https://bookmybus-client.onrender.com", // deployed frontend
+  "http://localhost:5173",                 // local dev (optional)
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser clients (e.g. Postman) where origin is undefined
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(morgan("dev"));
 
