@@ -17,7 +17,7 @@ dotenv.config();
 // --- CORS ---
 const allowedOrigins = [
   process.env.CLIENT_URL, // optional: set in Render env vars
-  "https://bookmybus-client1.onrender.com", // deployed frontend
+  "https://bookmybus-client2.onrender.com", // deployed frontend
   "http://localhost:5173",                 // local dev (optional)
 ];
 
