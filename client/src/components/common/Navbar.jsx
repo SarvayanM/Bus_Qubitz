@@ -15,6 +15,9 @@ import RoleContext from "./RoleContext";
 import Cookies from "js-cookie";
 import { getPassengerByPhone } from "../../api/passenger";
 
+// ✅ Import the logo from src/assets
+import busLogo from "../assets/images/bus-logo-2.png";
+
 export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -100,7 +103,7 @@ export default function Navbar() {
           {/* Left: Logo */}
           <Link to="/" className="flex items-center gap-2">
             <img
-              src="src/assets/images/bus-logo-2.png"
+              src={busLogo} // ✅ use imported logo
               alt="Bus Logo"
               className="w-12 h-10 object-contain"
             />
