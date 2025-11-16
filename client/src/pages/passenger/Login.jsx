@@ -23,6 +23,9 @@ import { FiSmartphone, FiShield, FiRotateCw } from "react-icons/fi";
 import { HiOutlineLockClosed } from "react-icons/hi";
 import COUNTRIES from "../../data/countries";
 
+// ✅ import the image from src/assets
+import busLoginImage from "../../assets/images/bus-login.jpeg";
+
 const DEFAULT_ROLE = "passenger";
 const USERS_COLLECTION = "users";
 
@@ -240,7 +243,7 @@ function Login() {
         {/* Left: Hero Image */}
         <div className="relative hidden lg:block">
           <img
-            src="src/assets/images/bus-login.jpeg"
+            src={busLoginImage} // ✅ use imported image here
             alt="Modern coach bus parked at terminal"
             className="absolute inset-0 h-full w-full object-cover"
           />
@@ -259,7 +262,6 @@ function Login() {
                 Just select your seats and complete passenger details to proceed
                 with your booking
               </p>
-                      
             </div>
 
             <div className="rounded-2xl border border-black/10 bg-white shadow-xl transition-all">
