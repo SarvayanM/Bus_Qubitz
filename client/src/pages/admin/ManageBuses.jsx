@@ -10,6 +10,7 @@ import {
   deleteBus,
 } from "../../api/bus";
 import { getCompanyById } from "../../api/company";
+import { SRI_LANKA_LOCATIONS } from "../../data/sriLankaLocations";
 
 /* ---------------- helpers ---------------- */
 const toMinutes = (hhmm) => {
@@ -35,6 +36,7 @@ const emptyBus = {
 
 export default function ManageBuses() {
   const [companyId, setCompanyId] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -68,7 +70,10 @@ export default function ManageBuses() {
         });
         if (mounted)
           setCompanyName(c?.name || c?.companyName || c?.title || "(Company)");
-
+        setCompanyEmail(
+          c?.email || c?.companyEmail || c?.contactEmail || "(Email)"
+        );
+        console.log(c.email);
         // buses
         const list = await getBusesByCompany(companyId).catch((e) => {
           console.warn("getBusesByCompany failed:", e);
@@ -280,13 +285,15 @@ export default function ManageBuses() {
         {/* Header */}
         <header className="mb-8 text-center">
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900">
-            Manage{" "}
+            Manage Your{" "}
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-emerald-600">
-              Buses
+              Operational Bus Fleet
             </span>
           </h1>
           <p className="mt-2 text-slate-600">
-            Edit or delete your buses. Company is read-only.
+            Oversee all buses assigned to your company. Edit or delete buses as
+            needed. Core company information is restricted and cannot be
+            modified
           </p>
         </header>
 
@@ -294,7 +301,7 @@ export default function ManageBuses() {
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white shadow-lg p-6">
           <div className="grid gap-4 md:grid-cols-3">
             <Readonly label="Company" value={companyName} />
-            <Readonly label="Company ID" value={companyId} />
+            <Readonly label="Company Email" value={companyEmail} />
             <div className="flex items-end">
               <p className="text-slate-600 text-sm">
                 Select a bus below to edit or delete.
@@ -303,6 +310,76 @@ export default function ManageBuses() {
           </div>
         </div>
 
+        {/* List / table */}
+        <section className="mt-10 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+          <div className="px-6 py-4 bg-indigo-600 text-white">
+            <div className="text-lg font-semibold">Your Buses</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-100">
+                <tr className="text-left">
+                  <Th>Name</Th>
+                  <Th>No</Th>
+                  <Th>Seats</Th>
+                  <Th>Price</Th>
+                  <Th>Route</Th>
+                  <Th>Depart</Th>
+                  <Th>Arrive</Th>
+                  <Th>Type</Th>
+                  <Th>Actions</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {buses.map((b, i) => (
+                  <tr key={b._id} className="odd:bg-white even:bg-slate-50">
+                    <Td className="font-medium">{b.busName}</Td>
+                    <Td>{b.busNo}</Td>
+                    <Td>{b.seats}</Td>
+                    <Td>LKR {Number(b.price).toFixed(2)}</Td>
+                    <Td>
+                      {b?.route?.from} → {b?.route?.to}
+                    </Td>
+                    <Td>{b?.schedule?.departure}</Td>
+                    <Td>
+                      {b?.schedule?.arrival}
+                      {b?.schedule?.nextDayArrival ? " (Next Day)" : ""}
+                    </Td>
+                    <Td>{b.type}</Td>
+                    <Td>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(b._id)}
+                          className="rounded-lg border px-3 py-1.5 text-xs hover:bg-slate-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(b._id)}
+                          className="rounded-lg bg-rose-600 text-white px-3 py-1.5 text-xs shadow hover:bg-rose-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </Td>
+                  </tr>
+                ))}
+                {!buses.length && (
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="px-6 py-8 text-center text-slate-600"
+                    >
+                      No buses found. Add one first.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
         {/* Edit form */}
         <form
           onSubmit={handleUpdate}
@@ -401,10 +478,11 @@ export default function ManageBuses() {
                   className="rounded-xl border border-slate-200 bg-white p-4 flex items-end gap-3"
                 >
                   <div className="flex-1">
-                    <Field
+                    <Select
                       label={`Place #${i + 1}`}
                       value={p.place}
                       onChange={(v) => setPickup(i, "place", v)}
+                      options={SRI_LANKA_LOCATIONS}
                     />
                   </div>
                   <div className="w-40">
@@ -448,79 +526,6 @@ export default function ManageBuses() {
             </button>
           </div>
         </form>
-
-        {/* List / table */}
-        <section className="mt-10 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-          <div className="px-6 py-4 bg-indigo-600 text-white">
-            <div className="text-lg font-semibold">Your Buses</div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-100">
-                <tr className="text-left">
-                  <Th>#</Th>
-                  <Th>Name</Th>
-                  <Th>No</Th>
-                  <Th>Seats</Th>
-                  <Th>Price</Th>
-                  <Th>Route</Th>
-                  <Th>Depart</Th>
-                  <Th>Arrive</Th>
-                  <Th>Type</Th>
-                  <Th>Actions</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {buses.map((b, i) => (
-                  <tr key={b._id} className="odd:bg-white even:bg-slate-50">
-                    <Td>{i + 1}</Td>
-                    <Td className="font-medium">{b.busName}</Td>
-                    <Td>{b.busNo}</Td>
-                    <Td>{b.seats}</Td>
-                    <Td>LKR {Number(b.price).toFixed(2)}</Td>
-                    <Td>
-                      {b?.route?.from} → {b?.route?.to}
-                    </Td>
-                    <Td>{b?.schedule?.departure}</Td>
-                    <Td>
-                      {b?.schedule?.arrival}
-                      {b?.schedule?.nextDayArrival ? " (+1d)" : ""}
-                    </Td>
-                    <Td>{b.type}</Td>
-                    <Td>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(b._id)}
-                          className="rounded-lg border px-3 py-1.5 text-xs hover:bg-slate-50"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(b._id)}
-                          className="rounded-lg bg-rose-600 text-white px-3 py-1.5 text-xs shadow hover:bg-rose-700"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </Td>
-                  </tr>
-                ))}
-                {!buses.length && (
-                  <tr>
-                    <td
-                      colSpan={10}
-                      className="px-6 py-8 text-center text-slate-600"
-                    >
-                      No buses found. Add one first.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
       </div>
     </div>
   );

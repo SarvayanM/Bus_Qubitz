@@ -325,3 +325,23 @@ export async function removeBus(req, res) {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 }
+
+
+export const getCompanyBuses = async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    if (!companyId) {
+      return res.status(400).json({ message: "companyId is required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({ message: "Invalid companyId format" });
+    }
+
+    const buses = await Bus.find({ companyId }).sort({ createdAt: -1 });
+    return res.json(buses);
+  } catch (err) {
+    console.error("getCompanyBuses error:", err);
+    return res.status(500).json({ message: "Failed to fetch buses" });
+  }
+};
+

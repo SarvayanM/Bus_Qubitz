@@ -1,138 +1,175 @@
-// src/pages/BusBookingHistory.jsx
-import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+// src/pages/busOwner/BusBookingHistory.jsx
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  fetchCompanyProfile,
+  fetchCompanyBookings,
+  fetchCompanyBuses,
+  fetchCompanyCancelledBookings,
+} from "../../api/company";
+import pdfMake from "pdfmake/build/pdfmake";
+import pdfFonts from "pdfmake/build/vfs_fonts";
 import BusLoader from "../../components/bus/BusLoader";
-import Cookies from "js-cookie";
-import { getBusesByCompany, getAvailableDatesForBus } from "../../api/bus";
-import { getBookingListByBusAndDate } from "../../api/booking";
 
-/* --------------------------------- helpers -------------------------------- */
-const pad2 = (n) => String(n).padStart(2, "0");
-const todayYmd = () => {
+// ----- pdfMake font setup (run once at module load) -----
+try {
+  const vfs = (pdfFonts && (pdfFonts.pdfMake?.vfs || pdfFonts.vfs)) || null;
+  if (vfs) pdfMake.vfs = vfs;
+} catch (e) {
+  // eslint-disable-next-line no-console
+  console.warn("pdfMake vfs not available:", e?.message || e);
+}
+
+// Helper: get today's date as YYYY-MM-DD
+function getTodayYMD() {
   const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-};
-const fmtDateTime = (iso) => {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(
-    d.getDate()
-  )} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-/* -------------------------------- component -------------------------------- */
+// Helper: normalize any date-ish value to YYYY-MM-DD or null
+function normalizeToYMD(value) {
+  if (!value) return null;
+
+  // If already "YYYY-MM-DD"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+
+  // Adjust to local date (remove timezone effect)
+  const tzOffset = d.getTimezoneOffset();
+  if (tzOffset !== 0) {
+    d.setMinutes(d.getMinutes() - tzOffset);
+  }
+
+  return d.toISOString().slice(0, 10);
+}
+
 export default function BusBookingHistory() {
+  const [company, setCompany] = useState(null);
+  const [activeBookings, setActiveBookings] = useState([]);
+  const [cancelledBookings, setCancelledBookings] = useState([]);
+  const [allBuses, setAllBuses] = useState([]);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [error, setError] = useState("");
 
-  const [companyId, setCompanyId] = useState("");
-  const [buses, setBuses] = useState([]);
-  const [busId, setBusId] = useState("");
-  const [availableDates, setAvailableDates] = useState([]);
-  const [travelDate, setTravelDate] = useState("");
+  // Frontend filters
+  const [selectedBusId, setSelectedBusId] = useState("all");
+  const [selectedRoute, setSelectedRoute] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("All"); // "All" | "Confirmed" | "Cancelled"
 
-  // table rows (booking docs)
-  const [rows, setRows] = useState([]);
+  const [dateFilter, setDateFilter] = useState(getTodayYMD); // default today
+  const [dateRangeFrom, setDateRangeFrom] = useState("");
+  const [dateRangeTo, setDateRangeTo] = useState("");
+  const [rangeError, setRangeError] = useState("");
 
-  /* -------------------------------- effects -------------------------------- */
+  // ---- Load data once, no backend date filters ----
   useEffect(() => {
-    setCompanyId(Cookies.get("companyId") || "");
-  }, []);
-
-  useEffect(() => {
-    if (!companyId) return;
-    let mounted = true;
-    (async () => {
+    const loadData = async () => {
       try {
         setLoading(true);
-        const list = await getBusesByCompany(companyId);
-        if (!mounted) return;
-        const arr = Array.isArray(list) ? list : [];
-        setBuses(arr);
-        if (!busId && arr.length > 0) setBusId(arr[0]._id);
-      } catch (e) {
-        setErr(e?.message || "Failed to load buses for your company");
+        setError("");
+
+        const [companyRes, activeRes, cancelledRes, busesRes] =
+          await Promise.all([
+            fetchCompanyProfile(),
+            fetchCompanyBookings(), // ALL active bookings for the company
+            fetchCompanyCancelledBookings(), // ALL cancelled bookings
+            fetchCompanyBuses(),
+          ]);
+
+        setCompany(companyRes || null);
+
+        // Normalize dates once here
+        const normalizedActive = (activeRes || []).map((b) => ({
+          ...b,
+          kind: "active",
+          status: b.status || "Confirmed",
+          travelDate: normalizeToYMD(b.travelDate),
+        }));
+
+        const normalizedCancelled = (cancelledRes || []).map((b) => ({
+          ...b,
+          kind: "cancelled",
+          status: "Cancelled",
+          travelDate: normalizeToYMD(b.travelDate),
+        }));
+
+        setActiveBookings(normalizedActive);
+        setCancelledBookings(normalizedCancelled);
+        setAllBuses(busesRes || []);
+      } catch (err) {
+        console.error("BookingsInRange load error:", err);
+        setError(
+          err?.response?.data?.message ||
+            err?.message ||
+            "Failed to load bookings for this company."
+        );
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
-    })();
-    return () => {
-      mounted = false;
     };
-  }, [companyId]);
 
-  useEffect(() => {
-    // when bus changes, refresh available dates
-    if (!busId) {
-      setTravelDate("");
-      setAvailableDates([]);
-      setRows([]);
-      return;
+    loadData();
+  }, []);
+
+  // ---- Custom range validation ----
+  const validateRange = (from, to) => {
+    if (from && to && from > to) {
+      setRangeError("From date cannot be after To date.");
+    } else {
+      setRangeError("");
     }
-    let mounted = true;
-    (async () => {
-      try {
-        const dates = await getAvailableDatesForBus(busId, {
-          from: todayYmd(),
-          days: 30,
-        });
-        if (!mounted) return;
-        const arr = Array.isArray(dates) ? dates : [];
-        setAvailableDates(arr);
-        if (arr.length > 0 && !arr.includes(travelDate)) setTravelDate("");
-      } catch (e) {
-        setErr(e?.message || "Failed to load available dates");
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [busId]);
+  };
 
-  useEffect(() => {
-    // fetch bookings for selected (busId, date)
-    if (!busId || !travelDate) {
-      setRows([]);
-      return;
+  const handleFromChange = (value) => {
+    const norm = value || "";
+    setDateRangeFrom(norm);
+    if (norm) {
+      setDateFilter("");
     }
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await getBookingListByBusAndDate(busId, travelDate);
-        // Accept both shapes: Array or { bookings: [...] }
-        const normalized = Array.isArray(res)
-          ? res
-          : Array.isArray(res?.bookings)
-          ? res.bookings
-          : [];
-        if (mounted) setRows(normalized);
-      } catch (e) {
-        toast.error(e?.response?.data?.message || "Failed to load bookings");
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [busId, travelDate]);
+    validateRange(norm, dateRangeTo);
+  };
 
-  const totalSeatsBooked = useMemo(
-    () =>
-      rows.reduce(
-        (sum, r) => sum + (Array.isArray(r.seats) ? r.seats.length : 0),
-        0
-      ),
-    [rows]
-  );
+  const handleToChange = (value) => {
+    const norm = value || "";
+    setDateRangeTo(norm);
+    if (norm) {
+      setDateFilter("");
+    }
+    validateRange(dateRangeFrom, norm);
+  };
 
-  const handlePrint = () => window.print();
+  // Shift single-day Travel Date by +/- days
+  const shiftDateFilter = (days) => {
+    const baseStr = dateFilter || getTodayYMD();
+    const d = new Date(baseStr);
+    if (Number.isNaN(d.getTime())) return;
+    d.setDate(d.getDate() + days);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const newStr = `${y}-${m}-${day}`;
+    setDateFilter(newStr);
+    setDateRangeFrom("");
+    setDateRangeTo("");
+    setRangeError("");
+  };
 
-  /* ----------------------------------- UI ---------------------------------- */
+  const openBookingModal = (booking) => setSelectedBooking(booking);
+  const closeBookingModal = () => setSelectedBooking(null);
+
   if (loading) {
     return (
-      <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100 px-4">
+      <div className="min-h-screen grid place-items-center bg-slate-50 px-4">
         <BusLoader
-          message="Loading booking data..."
-          subtext="Fetching bookings for your company"
+          message="Loading bookings..."
+          subtext="Fetching company bookings"
           height="h-56"
           className="max-w-lg"
         />
@@ -140,279 +177,1236 @@ export default function BusBookingHistory() {
     );
   }
 
-  if (err) {
+  if (error) {
     return (
-      <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="rounded-2xl border border-rose-200 bg-white px-8 py-5 shadow-md max-w-md text-center">
-          <div className="text-rose-600 text-lg font-semibold mb-2">Error</div>
-          <p className="text-slate-700">{err}</p>
-        </div>
+      <div className="min-h-screen grid place-items-center bg-slate-50 px-4">
+        <BusLoader
+          message="Error loading bookings"
+          subtext={
+            error ||
+            "Make sure you are logged in and the companyId cookie is set."
+          }
+          height="h-56"
+          className="max-w-lg"
+        />
       </div>
     );
   }
 
+  // ---------- Bus & route options ----------
+  const busOptions = [
+    { value: "all", label: "All Buses" },
+    ...allBuses.map((b) => ({ value: b._id, label: b.busName })),
+  ];
+
+  const routeSet = new Set();
+  allBuses.forEach((b) => {
+    if (b.route?.from && b.route?.to) {
+      routeSet.add(`${b.route.from} → ${b.route.to}`);
+    }
+  });
+  const routeOptions = [
+    { value: "all", label: "All Routes" },
+    ...Array.from(routeSet).map((r) => ({ value: r, label: r })),
+  ];
+
+  // ---------- Merge lists based on statusFilter ----------
+  let mergedList;
+  if (statusFilter === "Confirmed") {
+    mergedList = activeBookings;
+  } else if (statusFilter === "Cancelled") {
+    mergedList = cancelledBookings;
+  } else {
+    mergedList = [...activeBookings, ...cancelledBookings];
+  }
+
+  // ---------- Apply frontend filters ----------
+  const filteredBookings = mergedList.filter((b) => {
+    const bus = b.bus || b.busId || {};
+    const busIdStr = bus?._id?.toString?.() || "";
+
+    if (selectedBusId !== "all" && busIdStr !== selectedBusId) return false;
+
+    if (selectedRoute !== "all") {
+      const routeLabel = bus.route ? `${bus.route.from} → ${bus.route.to}` : "";
+      if (routeLabel !== selectedRoute) return false;
+    }
+
+    if (statusFilter !== "All" && b.status !== statusFilter) return false;
+
+    const tDate = b.travelDate;
+    if (!tDate) return false;
+
+    if (rangeError && dateRangeFrom && dateRangeTo) {
+      return false;
+    }
+
+    if (dateRangeFrom && dateRangeTo && !rangeError) {
+      if (tDate < dateRangeFrom || tDate > dateRangeTo) return false;
+      return true;
+    }
+
+    if (dateFilter) {
+      if (tDate !== dateFilter) return false;
+    }
+
+    return true;
+  });
+
+  // ---------- Labels ----------
+  const currentBusLabel =
+    selectedBusId === "all"
+      ? "All Buses"
+      : busOptions.find((o) => o.value === selectedBusId)?.label ||
+        "Selected Bus";
+
+  const currentRouteLabel =
+    selectedRoute === "all" ? "All Routes" : selectedRoute;
+
+  const currentStatusLabel =
+    statusFilter === "All" ? "All Bookings" : statusFilter;
+
+  let currentDateLabel;
+  if (dateRangeFrom && dateRangeTo && !rangeError) {
+    currentDateLabel = `${dateRangeFrom} → ${dateRangeTo}`;
+  } else if (dateFilter) {
+    currentDateLabel = dateFilter;
+  } else if (rangeError && dateRangeFrom && dateRangeTo) {
+    currentDateLabel = "Invalid range";
+  } else {
+    currentDateLabel = "All Dates";
+  }
+
+  // ---------- Export PDF (current view) ----------
+  const handleExportReport = () => {
+    if (!filteredBookings.length) {
+      alert("No bookings to export for the selected filters.");
+      return;
+    }
+
+    let totalRevenue = 0;
+    let totalBookings = filteredBookings.length;
+    let totalCancelled = 0;
+    let totalConfirmed = 0;
+
+    const tableBody = [];
+
+    tableBody.push([
+      { text: "Bus", style: "tableHeader" },
+      { text: "Bus No", style: "tableHeader" },
+      { text: "Passenger", style: "tableHeader" },
+      { text: "Contact", style: "tableHeader" },
+      { text: "Travel Date", style: "tableHeader" },
+      { text: "Route", style: "tableHeader" },
+      { text: "Seats (No + Gender)", style: "tableHeader" },
+      { text: "Total", style: "tableHeader" },
+      { text: "Status", style: "tableHeader" },
+    ]);
+
+    filteredBookings.forEach((b) => {
+      const passengerName = `${b.passenger?.fname || ""} ${
+        b.passenger?.lname || ""
+      }`.trim();
+      const contact = b.passenger?.contactNo || b.passenger?.phone || "";
+      const bookedAt = b.createdAt
+        ? new Date(b.createdAt).toLocaleString()
+        : "";
+
+      const bus = b.bus || b.busId || {};
+      const busName = bus.busName || "-";
+      const busNo = bus.busNo || "";
+      const routeLabel = bus.route
+        ? `${bus.route.from} → ${bus.route.to}`
+        : "-";
+
+      const seats = b.seats || [];
+      const seatDisplay = seats
+        .map((s) => {
+          const g =
+            s.gender === "Male"
+              ? "M"
+              : s.gender === "Female"
+              ? "F"
+              : s.gender === "Other"
+              ? "O"
+              : "";
+          return g ? `${s.number}(${g})` : `${s.number}`;
+        })
+        .join(", ");
+
+      const seatCount = seats.length || 0;
+      const pricePerSeat = bus.price != null ? Number(bus.price) : null;
+      const totalAmount =
+        pricePerSeat != null ? pricePerSeat * seatCount : null;
+
+      const pricePerSeatStr =
+        pricePerSeat != null ? `LKR ${pricePerSeat.toLocaleString()}` : "-";
+      const totalStr =
+        totalAmount != null ? `LKR ${totalAmount.toLocaleString()}` : "-";
+
+      const isCancelled = b.status === "Cancelled";
+      const cancelReason = b.cancelReason || "";
+      const cancelledAt = b.cancelledAt
+        ? new Date(b.cancelledAt).toLocaleString()
+        : "";
+
+      if (b.status === "Cancelled") totalCancelled += 1;
+      if (b.status === "Confirmed") totalConfirmed += 1;
+      if (totalAmount != null && !Number.isNaN(totalAmount)) {
+        totalRevenue += totalAmount;
+      }
+
+      tableBody.push([
+        { text: busName, style: "tableCell" },
+        { text: busNo, style: "tableCell" },
+        { text: passengerName || "-", style: "tableCell" },
+        { text: contact || "-", style: "tableCell" },
+        { text: b.travelDate || "-", style: "tableCell" },
+        { text: routeLabel, style: "tableCell" },
+        { text: seatDisplay || "-", style: "tableCell" },
+        { text: totalStr, style: "tableCell" },
+        {
+          text: b.status || "-",
+          style: "statusCell",
+          color: isCancelled ? "#b91c1c" : "#047857",
+        },
+      ]);
+
+      const detailLines = [];
+      detailLines.push(
+        `Booked At: ${bookedAt || "-"}    Payment: ${b.payment || "-"}`
+      );
+      detailLines.push(`Pickup: ${b.pickup || "-"}    Drop: ${b.drop || "-"}`);
+      detailLines.push(
+        `Seat Count: ${seatCount}    Price/Seat: ${pricePerSeatStr}`
+      );
+      if (isCancelled && (cancelReason || cancelledAt)) {
+        detailLines.push(
+          `Cancellation Reason: ${cancelReason || "-"}    Cancelled At: ${
+            cancelledAt || "-"
+          }`
+        );
+      }
+
+      tableBody.push([
+        {
+          text: detailLines.join("\n"),
+          colSpan: 9,
+          style: "detailRow",
+        },
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+      ]);
+    });
+
+    const docDefinition = {
+      info: {
+        title: `Bookings Report - ${currentDateLabel}`,
+      },
+      pageMargins: [20, 20, 20, 24],
+      content: [
+        {
+          text: `${company?.companyName || "Company"} – Bookings Report`,
+          style: "header",
+        },
+        {
+          margin: [0, 6, 0, 2],
+          columns: [
+            {
+              width: "50%",
+              stack: [
+                {
+                  text: `Bus Filter: ${currentBusLabel}`,
+                  style: "filterText",
+                },
+                {
+                  text: `Route Filter: ${currentRouteLabel}`,
+                  style: "filterText",
+                },
+              ],
+            },
+            {
+              width: "50%",
+              stack: [
+                {
+                  text: `Status Filter: ${currentStatusLabel}`,
+                  style: "filterText",
+                },
+                {
+                  text: `Date Filter: ${currentDateLabel}`,
+                  style: "filterText",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          text: `Total bookings in view: ${totalBookings}`,
+          margin: [0, 0, 0, 8],
+          style: "small",
+        },
+        {
+          table: {
+            headerRows: 1,
+            widths: [
+              "auto",
+              "auto",
+              "*",
+              "auto",
+              "auto",
+              "*",
+              "*",
+              "auto",
+              "auto",
+            ],
+            body: tableBody,
+          },
+          layout: {
+            fillColor: function (rowIndex) {
+              if (rowIndex === 0) return "#0f172a"; // header
+              if (rowIndex % 2 === 0) return "#f8fafc";
+              return null;
+            },
+            hLineColor: "#e2e8f0",
+            vLineColor: "#e2e8f0",
+          },
+        },
+        {
+          margin: [0, 8, 0, 0],
+          table: {
+            widths: ["*", "auto", "auto", "auto", "auto"],
+            body: [
+              [
+                { text: "Summary", style: "summaryLabel" },
+                {
+                  text: `Total: ${totalBookings}`,
+                  style: "summaryValue",
+                },
+                {
+                  text: `Confirmed: ${totalConfirmed}`,
+                  style: "summaryValue",
+                },
+                {
+                  text: `Cancelled: ${totalCancelled}`,
+                  style: "summaryValue",
+                },
+                {
+                  text: `Revenue: LKR ${totalRevenue.toLocaleString()}`,
+                  style: "summaryValue",
+                },
+              ],
+            ],
+          },
+          layout: "noBorders",
+        },
+      ],
+      styles: {
+        header: {
+          fontSize: 16,
+          bold: true,
+          color: "#0f172a",
+          margin: [0, 0, 0, 6],
+        },
+        filterText: {
+          fontSize: 9,
+          color: "#4b5563",
+        },
+        small: {
+          fontSize: 9,
+          color: "#6b7280",
+        },
+        tableHeader: {
+          fontSize: 9,
+          bold: true,
+          color: "#ffffff",
+          alignment: "left",
+        },
+        tableCell: {
+          fontSize: 8,
+          color: "#111827",
+        },
+        statusCell: {
+          fontSize: 8,
+          bold: true,
+        },
+        detailRow: {
+          fontSize: 8,
+          color: "#4b5563",
+          margin: [2, 1, 2, 4],
+        },
+        summaryLabel: {
+          fontSize: 10,
+          bold: true,
+          color: "#0f172a",
+        },
+        summaryValue: {
+          fontSize: 9,
+          color: "#111827",
+        },
+      },
+      defaultStyle: {
+        fontSize: 9,
+      },
+    };
+
+    pdfMake
+      .createPdf(docDefinition)
+      .download(`bookings_report_${Date.now()}.pdf`);
+  };
+
   return (
-    <div className="relative min-h-screen print:bg-white">
-      <div className="pointer-events-none absolute inset-0 opacity-20 mix-blend-screen print:hidden" />
-      <div className="relative mx-auto max-w-6xl px-4 py-10">
-        {/* Header */}
-        <header className="mb-8 text-center">
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white drop-shadow-md print:text-black">
-            Booking{" "}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 to-emerald-300 print:text-black print:bg-none">
-              History
-            </span>
-          </h1>
-          <p className="mt-2 text-slate-200/80 print:text-slate-700">
-            Select a bus and one of its upcoming dates to see bookings.
-          </p>
-        </header>
-
-        {/* Controls */}
-        <section className="rounded-3xl border border-white/20 bg-white/70 backdrop-blur-xl shadow-2xl print:border-0 print:shadow-none print:bg-transparent">
-          <div className="grid gap-6 p-6 md:grid-cols-3">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-800">
-                Select Bus
-              </label>
-              <div className="relative">
-                <select
-                  className="w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 py-3 pr-10 text-slate-900 shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  value={busId}
-                  onChange={(e) => {
-                    setBusId(e.target.value);
-                    setTravelDate("");
-                  }}
-                >
-                  <option value="">— Choose a bus —</option>
-                  {buses.map((b) => (
-                    <option key={b._id} value={b._id}>
-                      {b.busName}
-                    </option>
-                  ))}
-                </select>
-                <Chevron className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-800">
-                Upcoming Dates
-              </label>
-              <div className="relative">
-                <select
-                  className="w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 py-3 pr-10 text-slate-900 shadow-sm outline-none disabled:bg-slate-50 disabled:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
-                  value={travelDate}
-                  onChange={(e) => setTravelDate(e.target.value)}
-                  disabled={!busId || availableDates.length === 0}
-                >
-                  <option value="">— Select a date —</option>
-                  {availableDates.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-                <Chevron className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-              </div>
-            </div>
-
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-3 font-semibold shadow hover:bg-indigo-700 transition ml-auto print:hidden"
-                disabled={!busId || !travelDate || rows.length === 0}
-                title="Print or Save as PDF"
-              >
-                <PrinterIcon />
-                Print / PDF
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* Results */}
-        <section className="mt-8">
-          {busId && travelDate ? (
-            rows.length > 0 ? (
-              <div className="rounded-3xl border border-white/15 bg-white/80 backdrop-blur-xl shadow-2xl overflow-hidden print:shadow-none print:border-0 print:bg-transparent">
-                {/* Table Header */}
-                <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-600/90 to-emerald-600/90 text-white print:bg-white print:text-black">
-                  <div className="text-lg font-semibold">
-                    Bookings — {travelDate}
-                  </div>
-                  <div className="text-sm opacity-90 print:opacity-100">
-                    Generated: {fmtDateTime(new Date().toISOString())}
-                  </div>
-                </div>
-
-                {/* Table */}
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-100 print:bg-slate-100">
-                      <tr className="text-left">
-                        <Th>#</Th>
-                        <Th>Passenger</Th>
-                        <Th>Gender</Th>
-                        <Th>Phone</Th>
-                        <Th>Email</Th>
-                        <Th>Seats</Th>
-                        <Th>Pickup</Th>
-                        <Th>Drop</Th>
-                        <Th>Payment</Th>
-                        <Th>Status</Th>
-                        <Th>Travel Date</Th>
-                        <Th>Created</Th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {rows.map((r, i) => (
-                        <tr
-                          key={r._id || i}
-                          className="odd:bg-white even:bg-slate-50"
-                        >
-                          <Td>{i + 1}</Td>
-                          <Td>
-                            <div className="font-semibold text-slate-900">
-                              {r?.passenger?.fname} {r?.passenger?.lname}
-                            </div>
-                          </Td>
-                          <Td>{r?.passenger?.gender || "-"}</Td>
-                          <Td>{r?.passenger?.phone || "-"}</Td>
-                          <Td className="break-all">{r?.email || "-"}</Td>
-                          <Td>
-                            {Array.isArray(r.seats) && r.seats.length
-                              ? r.seats.join(", ")
-                              : "—"}
-                          </Td>
-                          <Td>{r?.pickup || "-"}</Td>
-                          <Td>{r?.drop || "-"}</Td>
-                          <Td>{r?.payment || "-"}</Td>
-                          <Td>
-                            <StatusBadge status={r?.status} />
-                          </Td>
-                          <Td>{r?.travelDate || "-"}</Td>
-                          <Td>{fmtDateTime(r?.createdAt)}</Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Footer Totals */}
-                <div className="flex items-center justify-end gap-6 px-6 py-4 bg-slate-50 print:bg-transparent">
-                  <div className="text-sm text-slate-600">
-                    <span className="font-semibold text-slate-800">
-                      {rows.length}
-                    </span>{" "}
-                    booking(s),
-                    <span className="font-semibold text-slate-800">
-                      {" "}
-                      {totalSeatsBooked}
-                    </span>{" "}
-                    seat(s) total
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-3xl border-2 border-dashed border-slate-300 bg-white/70 backdrop-blur-xl p-8 text-center">
-                <h3 className="font-semibold text-slate-900 mb-2">
-                  No bookings
-                </h3>
-                <p className="text-slate-600">
-                  There are no bookings for the selected bus and date.
-                </p>
-              </div>
-            )
-          ) : (
-            <div className="rounded-3xl border-2 border-dashed border-slate-300 bg-white/70 backdrop-blur-xl p-8 text-center">
-              <h3 className="font-semibold text-slate-900 mb-2">
-                No selection yet
-              </h3>
-              <p className="text-slate-600">
-                Choose a <span className="font-medium">Bus</span> and an{" "}
-                <span className="font-medium">Upcoming Date</span> to view
-                bookings.
+    <div className="min-h-screen bg-slate-50 font-sans">
+      {/* Header */}
+      <header className="shadow-sm sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 py-4 mt-10">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            className="flex flex-col items-center justify-center text-center gap-1"
+          >
+            <div className="text-center">
+              <h1 className="text-2xl sm:text-3xl font-bold text-blue-900 tracking-tight">
+                {company?.companyName || "Company"} Booking History
+              </h1>
+              <p className="text-slate-600 text-sm mt-1">
+                Review, filter, and export booking history across your fleet
               </p>
             </div>
-          )}
-        </section>
-      </div>
+          </motion.div>
+        </div>
+      </header>
 
-      {/* Print stylesheet */}
-      <style>{`
-        @page { size: A4; margin: 12mm; }
-        @media print {
-          .print\\:hidden { display: none !important; }
-          .print\\:text-black { color: #000 !important; }
-          .print\\:bg-white { background: #fff !important; }
-          .print\\:border-0 { border: 0 !important; }
-          .print\\:shadow-none { box-shadow: none !important; }
-        }
-      `}</style>
+      <main className="max-w-8xl mx-auto px-4 py-6 sm:py-8 space-y-6 sm:space-y-8">
+        {/* Bookings Table + Filters */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.05 }}
+          className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 sm:p-6"
+        >
+          {/* Wrapper */}
+          <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-5">
+            {/* Centered Heading */}
+            <div className="w-full text-center">
+              <h2 className="text-base sm:text-lg font-semibold text-slate-800">
+                Booking Overview
+              </h2>
+            </div>
+
+            {/* Second row: Left (details) + Right (count + export) */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
+              {/* Left Side: Bus / Route / Status / Date */}
+              <div className="md:text-left">
+                <p className="text-xs sm:text-sm text-slate-600">
+                  Bus:{" "}
+                  <span className="font-medium text-blue-900">
+                    {currentBusLabel}
+                  </span>{" "}
+                  • Route:{" "}
+                  <span className="font-medium text-blue-900">
+                    {currentRouteLabel}
+                  </span>{" "}
+                  • Status:{" "}
+                  <span className="font-medium text-blue-900">
+                    {currentStatusLabel}
+                  </span>{" "}
+                  • Date:{" "}
+                  <span className="font-medium text-blue-900">
+                    {currentDateLabel}
+                  </span>
+                </p>
+
+                {rangeError && (
+                  <p className="text-xs sm:text-sm text-red-600 mt-2 bg-red-50 px-3 py-2 rounded-lg border border-red-200">
+                    {rangeError}
+                  </p>
+                )}
+              </div>
+
+              {/* Right Side: Count + Export */}
+              <div className="flex items-center justify-center md:justify-end gap-2 sm:gap-3">
+                <span className="text-xs sm:text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                  {filteredBookings.length} booking
+                  {filteredBookings.length === 1 ? "" : "s"}
+                </span>
+                <button
+                  onClick={handleExportReport}
+                  className="px-3 sm:px-4 py-2 rounded-lg bg-blue-900 text-white text-xs sm:text-sm font-medium hover:bg-blue-800 transition-all duration-200 flex items-center gap-2 cursor-pointer"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  Export
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 place-items-start mb-4 sm:mb-6">
+            {/* Bus filter */}
+            <div className="flex flex-col gap-1 w-full">
+              <label className="text-xs sm:text-sm font-medium text-slate-700">
+                Bus
+              </label>
+              <select
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                value={selectedBusId}
+                onChange={(e) => setSelectedBusId(e.target.value)}
+              >
+                {busOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Route filter */}
+            <div className="flex flex-col gap-1 w-full">
+              <label className="text-xs sm:text-sm font-medium text-slate-700">
+                Route
+              </label>
+              <select
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                value={selectedRoute}
+                onChange={(e) => setSelectedRoute(e.target.value)}
+              >
+                {routeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status filter */}
+            <div className="flex flex-col gap-1 w-full">
+              <label className="text-xs sm:text-sm font-medium text-slate-700">
+                Status
+              </label>
+              <select
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="All">All Bookings</option>
+                <option value="Confirmed">Confirmed Only</option>
+                <option value="Cancelled">Cancelled Only</option>
+              </select>
+            </div>
+
+            {/* Travel Date (single day) */}
+            <div className="flex flex-col gap-1 w-full">
+              <label className="text-xs sm:text-sm font-medium text-slate-700">
+                Travel Date (Day)
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-2 border border-slate-300 rounded-xl text-xs hover:bg-slate-50"
+                  onClick={() => shiftDateFilter(-1)}
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                </button>
+
+                <input
+                  type="date"
+                  className="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={dateFilter}
+                  onChange={(e) => {
+                    setDateFilter(e.target.value);
+                    setDateRangeFrom("");
+                    setDateRangeTo("");
+                    setRangeError("");
+                  }}
+                />
+
+                <button
+                  type="button"
+                  className="px-3 py-2 border border-slate-300 rounded-xl text-xs hover:bg-slate-50"
+                  onClick={() => shiftDateFilter(1)}
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Custom Range */}
+            <div className="flex flex-col gap-1 w-full">
+              <label className="text-xs sm:text-sm font-medium text-slate-700">
+                Custom Date Range
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  className="flex-1 min-w-0 border border-slate-300 rounded-xl px-2 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={dateRangeFrom}
+                  onChange={(e) => handleFromChange(e.target.value)}
+                />
+                <span className="text-xs text-slate-500">to</span>
+                <input
+                  type="date"
+                  className="flex-1 min-w-0 border border-slate-300 rounded-xl px-2 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={dateRangeTo}
+                  onChange={(e) => handleToChange(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="min-w-full text-xs sm:text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  {[
+                    "Bus",
+                    "Passenger",
+                    "Contact",
+                    "Travel Date",
+                    "Route",
+                    "Seats (No + Gender)",
+                    "Total",
+                    "Status / Cancellation",
+                    "Actions",
+                  ].map((header) => (
+                    <th
+                      key={header}
+                      className={`py-2.5 px-3 sm:px-4 text-left font-semibold text-slate-700 ${
+                        header === "Actions" ? "text-right" : ""
+                      }`}
+                    >
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredBookings.map((b, index) => {
+                  const seats = b.seats || [];
+                  const seatDisplay = seats
+                    .map((s) => {
+                      const g =
+                        s.gender === "Male"
+                          ? "M"
+                          : s.gender === "Female"
+                          ? "F"
+                          : s.gender === "Other"
+                          ? "O"
+                          : "";
+                      return g ? `${s.number}(${g})` : `${s.number}`;
+                    })
+                    .join(", ");
+
+                  const seatCount = seats.length || 0;
+
+                  const bookedAt = b.createdAt
+                    ? new Date(b.createdAt).toLocaleString()
+                    : "-";
+
+                  const isCancelled = b.status === "Cancelled";
+                  const cancelReason = b.cancelReason || null;
+                  const cancelledAt = b.cancelledAt
+                    ? new Date(b.cancelledAt).toLocaleString()
+                    : null;
+
+                  const bus = b.bus || b.busId || {};
+                  const busName = bus.busName || "-";
+                  const busNo = bus.busNo || "";
+                  const routeLabel = bus.route
+                    ? `${bus.route.from} → ${bus.route.to}`
+                    : "-";
+
+                  const pricePerSeat =
+                    bus.price != null ? Number(bus.price) : null;
+                  const totalAmount =
+                    pricePerSeat != null ? pricePerSeat * seatCount : null;
+                  const totalStr =
+                    totalAmount != null
+                      ? `LKR ${totalAmount.toLocaleString()}`
+                      : "-";
+
+                  return (
+                    <motion.tr
+                      key={b._id}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.18, delay: index * 0.01 }}
+                      className={`transition-colors duration-150 hover:bg-blue-50 ${
+                        index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                      }`}
+                    >
+                      {/* Bus + Bus No */}
+                      <td className="py-2.5 px-3 sm:px-4 align-top">
+                        <div className="font-medium text-slate-800">
+                          {busName}
+                        </div>
+                        {busNo && (
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            {busNo}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Passenger */}
+                      <td className="py-2.5 px-3 sm:px-4 align-top">
+                        <div className="text-slate-800 font-medium">
+                          {b.passenger?.fname} {b.passenger?.lname}
+                        </div>
+                      </td>
+
+                      {/* Contact */}
+                      <td className="py-2.5 px-3 sm:px-4 text-slate-700 align-top">
+                        {b.passenger?.contactNo || b.passenger?.phone || "-"}
+                      </td>
+
+                      {/* Travel Date */}
+                      <td className="py-2.5 px-3 sm:px-4 text-slate-700 align-top">
+                        {b.travelDate || "-"}
+                      </td>
+
+                      {/* Route */}
+                      <td className="py-2.5 px-3 sm:px-4 text-slate-700 align-top">
+                        {routeLabel}
+                      </td>
+
+                      {/* Seats (No + Gender) */}
+                      <td className="py-2.5 px-3 sm:px-4 align-top">
+                        {seatDisplay ? (
+                          <div>
+                            <span className="text-slate-800">
+                              {seatDisplay}
+                            </span>
+                            <span className="text-[11px] text-slate-500 ml-1.5">
+                              ({seatCount})
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+
+                      {/* Total */}
+                      <td className="py-2.5 px-3 sm:px-4 font-semibold text-slate-800 align-top">
+                        {totalStr}
+                      </td>
+
+                      {/* Status + cancellation metadata */}
+                      <td className="py-2.5 px-3 sm:px-4 align-top">
+                        <div className="flex flex-col gap-1.5">
+                          <span
+                            className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold w-fit transition-colors duration-150 ${
+                              b.status === "Confirmed"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : b.status === "Cancelled"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {b.status}
+                          </span>
+                          <div className="text-[11px] text-slate-600 space-y-0.5">
+                            <div className="flex items-center gap-1">
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                              <span>Booked: {bookedAt}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                                />
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                                />
+                              </svg>
+                              <span>
+                                Pickup: {b.pickup || "-"} • Drop:{" "}
+                                {b.drop || "-"}
+                              </span>
+                            </div>
+                            {isCancelled && (cancelReason || cancelledAt) && (
+                              <div className="bg-red-50 p-2 rounded-lg border border-red-100 mt-1">
+                                {cancelReason && (
+                                  <div className="flex items-start gap-1">
+                                    <svg
+                                      className="w-3 h-3 mt-0.5 flex-shrink-0 text-red-600"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+                                      />
+                                    </svg>
+                                    <span className="text-red-700">
+                                      Reason: {cancelReason}
+                                    </span>
+                                  </div>
+                                )}
+                                {cancelledAt && (
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <svg
+                                      className="w-3 h-3 text-red-600"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                      />
+                                    </svg>
+                                    <span className="text-red-700">
+                                      Cancelled: {cancelledAt}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-2.5 px-3 sm:px-4 text-right align-top">
+                        <button
+                          onClick={() => openBookingModal(b)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-900 text-white text-xs font-medium rounded-lg hover:bg-blue-800 transition-all duration-150 cursor-pointer"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                            />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                            />
+                          </svg>
+                          View
+                        </button>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+                {filteredBookings.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="text-center py-10 sm:py-12">
+                      <div className="flex flex-col items-center justify-center text-slate-400">
+                        <svg
+                          className="w-12 h-12 mb-3"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1}
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                          />
+                        </svg>
+                        <p className="text-sm sm:text-base font-medium text-slate-500 mb-1">
+                          No bookings found
+                        </p>
+                        <p className="text-xs sm:text-sm text-slate-400">
+                          Try adjusting your filters to see more results.
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </motion.section>
+      </main>
+
+      {/* Booking Modal with fly-in / fly-out */}
+      <AnimatePresence>
+        {selectedBooking && (
+          <BookingModal booking={selectedBooking} onClose={closeBookingModal} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-/* --------------------------------- atoms ---------------------------------- */
-function Chevron({ className = "" }) {
+// -------- Booking Modal (with close button + animations) --------
+
+function BookingModal({ booking, onClose }) {
+  const seats = booking.seats || [];
+  const seatDisplay = seats
+    .map((s) => {
+      const g =
+        s.gender === "Male"
+          ? "M"
+          : s.gender === "Female"
+          ? "F"
+          : s.gender === "Other"
+          ? "O"
+          : "";
+      return g ? `${s.number}(${g})` : `${s.number}`;
+    })
+    .join(", ");
+
+  const seatCount = seats.length || 0;
+
+  const bus = booking.bus || booking.busId || {};
+  const pricePerSeat = bus.price != null ? Number(bus.price) : 0;
+  const baseAmount = pricePerSeat * seatCount;
+
+  const bookedAt = booking.createdAt
+    ? new Date(booking.createdAt).toLocaleString()
+    : "-";
+
+  const isCancelled = booking.status === "Cancelled";
+  const cancelReason = booking.cancelReason || null;
+  const cancelledAt = booking.cancelledAt
+    ? new Date(booking.cancelledAt).toLocaleString()
+    : null;
+
+  const routeLabel = bus.route ? `${bus.route.from} → ${bus.route.to}` : "-";
+
   return (
-    <svg
-      className={`h-5 w-5 text-slate-500 ${className}`}
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      aria-hidden="true"
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
     >
-      <path
-        fillRule="evenodd"
-        d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-function Th({ children }) {
-  return (
-    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 whitespace-nowrap">
-      {children}
-    </th>
-  );
-}
-function Td({ children }) {
-  return (
-    <td className="px-4 py-3 text-slate-800 align-top whitespace-nowrap">
-      {children}
-    </td>
-  );
-}
-function StatusBadge({ status }) {
-  const s = (status || "").toLowerCase();
-  const map = {
-    confirmed: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    pending: "bg-amber-50 text-amber-800 ring-amber-200",
-    cancelled: "bg-rose-50 text-rose-700 ring-rose-200",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${
-        map[s] || "bg-slate-100 text-slate-700 ring-slate-200"
-      }`}
-    >
-      {status || "-"}
-    </span>
-  );
-}
-function PrinterIcon() {
-  return (
-    <svg
-      className="h-5 w-5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-    >
-      <path strokeWidth="1.8" d="M7 8V4h10v4M6 17h12v3H6z" />
-      <rect x="3" y="9" width="18" height="8" rx="2" strokeWidth="1.8" />
-    </svg>
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.97 }}
+        transition={{ duration: 0.22 }}
+        className="bg-white rounded-2xl shadow-2xl max-w-xl w-full mx-2 p-4 sm:p-5 relative max-h-[80vh] overflow-y-auto"
+      >
+        {/* Icon close (top-right) */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors duration-150 cursor-pointer bg-slate-100 hover:bg-slate-200 rounded-full p-1.5"
+        >
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+
+        <h3 className="text-lg sm:text-xl font-bold text-blue-900 mb-4 sm:mb-5">
+          Booking Details
+        </h3>
+
+        <div className="space-y-4 sm:space-y-5">
+          {/* Passenger block */}
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+              <svg
+                className="w-5 h-5 text-blue-900"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                />
+              </svg>
+              Passenger Information
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm">
+              <div>
+                <span className="text-slate-600">Name</span>
+                <p className="font-medium text-slate-800">
+                  {booking.passenger?.fname} {booking.passenger?.lname}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Contact</span>
+                <p className="font-medium text-slate-800">
+                  {booking.passenger?.contactNo ||
+                    booking.passenger?.phone ||
+                    "-"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">NIC</span>
+                <p className="font-medium text-slate-800">
+                  {booking.passenger?.nic || "-"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Email</span>
+                <p className="font-medium text-slate-800">
+                  {booking.passenger?.email || "-"}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-slate-200 text-xs sm:text-sm">
+              <span className="text-slate-600">Booked At</span>
+              <p className="font-medium text-slate-800">{bookedAt}</p>
+            </div>
+          </div>
+
+          {/* Bus & Trip block */}
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+              <svg
+                className="w-5 h-5 text-blue-900"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              Bus & Trip Details
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm">
+              <div>
+                <span className="text-slate-600">Bus</span>
+                <p className="font-medium text-slate-800">
+                  {bus.busName || "-"} {bus.busNo ? `(${bus.busNo})` : ""}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Route</span>
+                <p className="font-medium text-slate-800">{routeLabel}</p>
+              </div>
+              <div>
+                <span className="text-slate-600">Travel Date</span>
+                <p className="font-medium text-slate-800">
+                  {booking.travelDate || "-"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Departure</span>
+                <p className="font-medium text-slate-800">
+                  {bus.schedule?.departure || "-"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Pickup</span>
+                <p className="font-medium text-slate-800">
+                  {booking.pickup || "-"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Drop</span>
+                <p className="font-medium text-slate-800">
+                  {booking.drop || "-"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Seats & Payment block */}
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+              <svg
+                className="w-5 h-5 text-blue-900"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+                />
+              </svg>
+              Seats & Payment
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm">
+              <div>
+                <span className="text-slate-600">Seats (No + Gender)</span>
+                <p className="font-medium text-slate-800">
+                  {seatDisplay || "N/A"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Seat Count</span>
+                <p className="font-medium text-slate-800">{seatCount}</p>
+              </div>
+              <div>
+                <span className="text-slate-600">Price per Seat</span>
+                <p className="font-medium text-slate-800">
+                  LKR {pricePerSeat.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Total</span>
+                <p className="font-bold text-blue-900 text-base sm:text-lg">
+                  LKR {baseAmount.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Payment</span>
+                <p className="font-medium text-slate-800">
+                  {booking.payment || "-"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-600">Status</span>
+                <span
+                  className={`inline-flex px-3 py-1 rounded-full text-[11px] font-semibold ${
+                    booking.status === "Confirmed"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : booking.status === "Cancelled"
+                      ? "bg-red-100 text-red-800"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {booking.status}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Cancellation block (if any) */}
+          {isCancelled && (cancelReason || cancelledAt) && (
+            <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+              <h4 className="font-semibold text-red-800 mb-3 flex items-center gap-2 text-sm">
+                <svg
+                  className="w-5 h-5 text-red-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+                  />
+                </svg>
+                Cancellation Details
+              </h4>
+              <div className="space-y-1.5 text-xs sm:text-sm">
+                {cancelReason && (
+                  <div>
+                    <span className="text-red-700 font-medium">Reason</span>
+                    <p className="text-red-800 mt-0.5">{cancelReason}</p>
+                  </div>
+                )}
+                {cancelledAt && (
+                  <div>
+                    <span className="text-red-700 font-medium">
+                      Cancelled At
+                    </span>
+                    <p className="text-red-800 mt-0.5">{cancelledAt}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div className="mt-5 sm:mt-6 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 sm:px-5 py-2 rounded-lg bg-blue-900 text-white text-xs sm:text-sm font-medium hover:bg-blue-800 transition-colors duration-150 cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }

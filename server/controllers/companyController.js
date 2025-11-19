@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Company from "../models/Company.js";
 
 /** Build query from filters */
@@ -149,7 +150,7 @@ export const getCompanyIdByEmail = async (req, res) => {
     console.log(req.query.email);
     const emailo = "wijitha@gmail.com";
     console.log(email);
-    const company = await Company.findOne({ email: emailo }); // ✅ findOne instead of find
+    const company = await Company.findOne({ email: email }); // ✅ findOne instead of find
 
     if (!company)
       return res
@@ -221,5 +222,58 @@ export const removeCompany = async (req, res) => {
     res.json({ success: true, message: "Deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+/* export const getCompanyIdByEmail = async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const company = await Company.findOne({ email: email.toLowerCase().trim() });
+    if (!company) {
+      return res.status(404).json({ message: "Company not found for this email" });
+    }
+
+    return res.json({ companyId: company._id.toString() });
+  } catch (err) {
+    console.error("getCompanyIdByEmail error:", err);
+    return res.status(500).json({ message: "Failed to lookup companyId" });
+  }
+}; */
+
+// Profile for logged-in company (via companyId query)
+export const getCompanyProfile = async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    if (!companyId) {
+      return res.status(400).json({ message: "companyId is required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({ message: "Invalid companyId format" });
+    }
+
+    const company = await Company.findById(companyId);
+    if (!company) {
+      return res.status(404).json({ message: "Company not found" });
+    }
+
+    return res.json({
+      _id: company._id,
+      companyName: company.companyName,
+      email: company.email,
+      phone: company.phone,
+      address: company.address,
+      website: company.website,
+      registrationNumber: company.registrationNumber,
+      contactPerson: company.contactPerson,
+      status: company.status,
+      createdAt: company.createdAt,
+    });
+  } catch (err) {
+    console.error("getCompanyProfile error:", err);
+    return res.status(500).json({ message: "Failed to fetch company profile" });
   }
 };

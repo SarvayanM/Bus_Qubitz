@@ -33,6 +33,7 @@ import ManageBuses from "./pages/admin/ManageBuses";
 
 import CompanyHistory from "./pages/admin/CompanyHistory";
 import CompanyLogin from "./pages/busOwner/CompanyLogin";
+import BusOwnerDashboard from "./pages/busOwner/BusOwnerDashboard";
 
 function AppContent() {
   const [userRole, setUserRole] = useState("");
@@ -116,6 +117,7 @@ function AppContent() {
             <Route path="/manageBuses" element={<ManageBuses />} />
             <Route path="/companyHistory" element={<CompanyHistory />} />
             <Route path="/companyLogin" element={<CompanyLogin />} />
+            <Route path="/busOwnerDashboard" element={<BusOwnerDashboard />} />
             <Route path="/bookingHistory" element={<BookingHistory />} />
             <Route
               path="/selectedBusDetails"

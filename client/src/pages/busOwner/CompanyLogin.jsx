@@ -69,15 +69,18 @@ function CompanyLogin() {
 
       const { user } = await signInWithEmailAndPassword(auth, email, password);
       const userDoc = await getDoc(doc(db, "users", user.uid));
-      const role = userDoc.data()?.role || "passenger";
+      const role = userDoc.data()?.role || "busOwner";
+      console.log(role);
 
       if (role === "busOwner") {
+        console.log(role);
         const companyId = await getCompanyIdByEmail(email);
         console.log(companyId);
         persistSession(role, companyId);
         document.cookie = `companyId=${encodeURIComponent(
           companyId
         )}; path=/; max-age=${7 * 24 * 60 * 60}; Secure; SameSite=Strict`;
+        console.log(document.cookie);
       } else if (role === "passenger") {
         persistSession(role, email);
         document.cookie = `email=${encodeURIComponent(
@@ -86,7 +89,7 @@ function CompanyLogin() {
       }
 
       notify("Login successful!", "success");
-      navigate("/");
+      navigate("/busOwnerDashboard");
     } catch (error) {
       const errorMessages = {
         "auth/user-not-found": "No user found with this email.",

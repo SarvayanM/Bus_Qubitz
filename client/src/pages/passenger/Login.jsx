@@ -262,6 +262,7 @@ function Login() {
                 Just select your seats and complete passenger details to proceed
                 with your booking
               </p>
+                      
             </div>
 
             <div className="rounded-2xl border border-black/10 bg-white shadow-xl transition-all">

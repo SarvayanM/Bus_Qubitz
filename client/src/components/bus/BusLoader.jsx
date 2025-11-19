@@ -3,55 +3,61 @@ import React from "react";
 import { motion, useAnimationControls } from "framer-motion";
 
 /**
- * BusLoader — Reusable animated "bus on a road" loading component
+ * BusLoader — Compact circular "bus on a road" loading component
  *
  * Props:
  *  - message?: string
  *  - subtext?: string
- *  - height?: string (Tailwind h-* class, default: 'h-72')
+ *  - height?: string (Tailwind height class for the wrapper, default: 'h-72')
  *  - className?: string (extra classes for the outer wrapper)
+ *
+ * Note:
+ *  - The loader is centered vertically & horizontally inside its wrapper.
+ *  - Use height="h-screen" if you want a full-page centered loader.
  */
 export default function BusLoader({
-  message = "Loading…",
+  message = "Loading your buses…",
   subtext = "Please wait a moment",
   height = "h-72",
   className = "",
 }) {
   const roadControls = useAnimationControls();
   const cloudsControls = useAnimationControls();
-  const hillsControls = useAnimationControls();
 
   React.useEffect(() => {
+    // Animate dashed road
     roadControls.start({
-      backgroundPositionX: ["0px", "800px"],
-      transition: { duration: 1.2, ease: "linear", repeat: Infinity },
+      backgroundPositionX: ["0px", "120px"],
+      transition: { duration: 1.1, ease: "linear", repeat: Infinity },
     });
+
+    // Gentle cloud drift
     cloudsControls.start({
-      x: [0, -80],
+      x: [0, 10, -10, 0],
       transition: {
-        duration: 12,
+        duration: 10,
         ease: "linear",
         repeat: Infinity,
-        repeatType: "reverse",
       },
     });
-    hillsControls.start({
-      x: [0, -40],
-      transition: {
-        duration: 8,
-        ease: "linear",
-        repeat: Infinity,
-        repeatType: "reverse",
-      },
-    });
-  }, [roadControls, cloudsControls, hillsControls]);
+  }, [roadControls, cloudsControls]);
 
   const BusSVG = (
     <svg
       viewBox="0 0 220 100"
-      className="w-52 md:w-60 drop-shadow-[0_8px_24px_rgba(14,165,233,0.35)]"
+      className="w-24 sm:w-28 md:w-32 drop-shadow-[0_8px_18px_rgba(30,64,175,0.45)]"
     >
-      {/* Body */}
+      {/* Shadow under bus */}
+      <ellipse
+        cx="110"
+        cy="84"
+        rx="70"
+        ry="8"
+        fill="rgba(15,23,42,0.25)"
+        opacity="0.35"
+      />
+
+      {/* Body base (soft highlight) */}
       <rect
         x="10"
         y="22"
@@ -59,9 +65,11 @@ export default function BusLoader({
         ry="10"
         width="190"
         height="50"
-        fill="#0EA5E9"
+        fill="#1E3A8A"
         opacity="0.08"
       />
+
+      {/* Main body */}
       <rect
         x="10"
         y="20"
@@ -69,27 +77,36 @@ export default function BusLoader({
         ry="12"
         width="190"
         height="56"
-        fill="#3B82F6"
+        fill="#1E3A8A" // blue-900
       />
+
+      {/* Top accent strip */}
+      <rect x="10" y="20" width="190" height="8" fill="#1D4ED8" />
+
       {/* Windows */}
-      <rect x="24" y="30" width="32" height="20" rx="4" fill="#E2E8F0" />
-      <rect x="62" y="30" width="32" height="20" rx="4" fill="#E2E8F0" />
-      <rect x="100" y="30" width="32" height="20" rx="4" fill="#E2E8F0" />
-      <rect x="138" y="30" width="48" height="20" rx="4" fill="#E2E8F0" />
+      <rect x="24" y="30" width="32" height="20" rx="4" fill="#E5F0FF" />
+      <rect x="62" y="30" width="32" height="20" rx="4" fill="#E5F0FF" />
+      <rect x="100" y="30" width="32" height="20" rx="4" fill="#E5F0FF" />
+      <rect x="138" y="30" width="48" height="20" rx="4" fill="#E5F0FF" />
+
       {/* Door line */}
-      <rect x="136" y="28" width="2" height="26" fill="#1E3A8A" opacity="0.2" />
+      <rect x="136" y="28" width="2" height="26" fill="#0F172A" opacity="0.2" />
+
       {/* Headlight */}
       <circle cx="196" cy="48" r="6" fill="#FDE68A" />
+      <circle cx="196" cy="48" r="3" fill="#FEF3C7" />
+
       {/* Wheels */}
       <g>
-        <circle cx="60" cy="76" r="14" fill="#0F172A" />
-        <circle cx="60" cy="76" r="6" fill="#94A3B8" />
+        <circle cx="60" cy="76" r="13" fill="#020617" />
+        <circle cx="60" cy="76" r="7" fill="#CBD5F5" />
       </g>
       <g>
-        <circle cx="160" cy="76" r="14" fill="#0F172A" />
-        <circle cx="160" cy="76" r="6" fill="#94A3B8" />
+        <circle cx="160" cy="76" r="13" fill="#020617" />
+        <circle cx="160" cy="76" r="7" fill="#CBD5F5" />
       </g>
-      {/* Stripe */}
+
+      {/* Side stripe */}
       <rect x="10" y="48" width="190" height="6" fill="#1D4ED8" />
     </svg>
   );
@@ -97,75 +114,98 @@ export default function BusLoader({
   return (
     <div
       className={[
-        "relative overflow-hidden rounded-3xl border border-slate-300/70",
-        "bg-white px-5 sm:px-8",
+        "flex flex-col items-center justify-center",
+        "text-center",
         height,
         className,
       ].join(" ")}
     >
-      {/* SKY + clouds */}
-      <motion.div
-        animate={cloudsControls}
-        className="absolute top-6 left-0 right-0 flex justify-between px-6 pointer-events-none"
-      >
-        <Cloud className="w-24 opacity-40" />
-        <Cloud className="w-28 opacity-30" />
-        <Cloud className="w-20 opacity-40 hidden sm:block" />
-      </motion.div>
+      {/* Circular loader */}
+      <div className="relative">
+        {/* Soft glow ring */}
+        <div className="absolute inset-0 -inset-2 sm:-inset-2 rounded-full blur-xl bg-blue-900/15 pointer-events-none" />
 
-      {/* HILLS */}
-      <motion.div
-        animate={hillsControls}
-        className="absolute bottom-20 left-0 right-0 flex justify-between px-10 pointer-events-none"
-      >
-        <Hill className="w-48 opacity-30" />
-        <Hill className="w-64 opacity-25" />
-      </motion.div>
+        {/* Outer ring */}
+        <div className="relative flex items-center justify-center">
+          <div className="w-32 h-32 sm:w-36 sm:h-36 md:w-40 md:h-40 rounded-full bg-gradient-to-b from-slate-50 to-slate-100 border border-slate-200 shadow-[0_18px_45px_rgba(15,23,42,0.18)] overflow-hidden">
+            {/* Sky backdrop */}
+            <div className="absolute inset-0 bg-gradient-to-b from-blue-50 via-slate-50 to-slate-100" />
 
-      {/* ROAD */}
-      <div className="absolute bottom-0 left-0 right-0 h-24">
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-200 to-slate-300 border-t border-slate-400/70" />
-        <motion.div
-          animate={roadControls}
-          className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-2"
-          style={{
-            backgroundImage:
-              "repeating-linear-gradient(90deg, rgba(0,0,255,.8) 0 40px, transparent 40px 80px)",
-            backgroundSize: "80px 2px",
-          }}
-        />
+            {/* Clouds */}
+            <motion.div
+              animate={cloudsControls}
+              className="absolute top-3 left-0 right-0 flex justify-between px-3 sm:px-4 pointer-events-none"
+            >
+              <Cloud className="w-10 opacity-70" />
+              <Cloud className="w-12 opacity-50" />
+            </motion.div>
+
+            {/* Subtle sun / glow in top-left */}
+            <div className="absolute -left-4 -top-4 w-10 h-10 rounded-full bg-blue-200/40 blur-lg" />
+
+            {/* Road */}
+            <div className="absolute bottom-7 left-4 right-4 h-5">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-b from-slate-200 to-slate-300 border border-slate-300/70" />
+              <motion.div
+                animate={roadControls}
+                className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px]"
+                style={{
+                  backgroundImage:
+                    "repeating-linear-gradient(90deg, rgba(255,255,255,0.95) 0 26px, transparent 26px 52px)",
+                  backgroundSize: "52px 2px",
+                }}
+              />
+            </div>
+
+            {/* Bus */}
+            <motion.div
+              initial={{ x: "-45%" }}
+              animate={{ x: ["-45%", "45%"] }}
+              transition={{
+                duration: 3.2,
+                ease: "linear",
+                repeat: Infinity,
+              }}
+              className="absolute bottom-7 left-1/2 -translate-x-1/2"
+            >
+              <motion.div
+                animate={{ y: [0, -2, 0] }}
+                transition={{
+                  duration: 0.9,
+                  ease: "easeInOut",
+                  repeat: Infinity,
+                }}
+              >
+                {BusSVG}
+              </motion.div>
+            </motion.div>
+          </div>
+
+          {/* Thin blue focus ring */}
+          <div className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-blue-900/20" />
+        </div>
       </div>
 
-      {/* CONTENT (text above bus) */}
-      <div className="absolute top-8 w-full text-center">
+      {/* Text below loader */}
+      {(message || subtext) && (
         <motion.div
-          initial={{ opacity: 0, y: 8 }}
+          initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
+          transition={{ duration: 0.35, delay: 0.1 }}
+          className="mt-4 px-4 max-w-sm"
         >
-          <p className="text-2xl md:text-3xl font-bold text-blue-900">
-            {message}
-          </p>
-          <p className="text-lg md:text-xl text-blue-700 mt-1">{subtext}</p>
+          {message && (
+            <p className="text-base sm:text-lg md:text-xl font-semibold text-blue-900">
+              {message}
+            </p>
+          )}
+          {subtext && (
+            <p className="text-xs sm:text-sm md:text-base text-slate-600 mt-1">
+              {subtext}
+            </p>
+          )}
         </motion.div>
-      </div>
-
-      {/* BUS */}
-      <motion.div
-        // animate using the `left` CSS property so the motion is relative to the loader div
-        initial={{ left: "-100%" }}
-        animate={{ left: ["-100%", "100%"] }}
-        transition={{ duration: 4.2, ease: "linear", repeat: Infinity }}
-        className="absolute bottom-16 left-0"
-        style={{ position: "absolute" }}
-      >
-        <motion.div
-          animate={{ y: [0, -2, 0] }}
-          transition={{ duration: 1.2, ease: "easeInOut", repeat: Infinity }}
-        >
-          {BusSVG}
-        </motion.div>
-      </motion.div>
+      )}
     </div>
   );
 }
@@ -176,27 +216,10 @@ function Cloud({ className = "" }) {
   return (
     <svg viewBox="0 0 120 60" className={className}>
       <g fill="white">
-        <ellipse cx="30" cy="36" rx="22" ry="12" />
-        <ellipse cx="54" cy="30" rx="18" ry="14" />
-        <ellipse cx="80" cy="36" rx="22" ry="12" />
+        <ellipse cx="30" cy="34" rx="20" ry="10" />
+        <ellipse cx="56" cy="30" rx="18" ry="12" />
+        <ellipse cx="82" cy="34" rx="20" ry="10" />
       </g>
-    </svg>
-  );
-}
-
-function Hill({ className = "" }) {
-  return (
-    <svg viewBox="0 0 140 60" className={className}>
-      <defs>
-        <linearGradient id="hillGrad" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.15" />
-          <stop offset="100%" stopColor="#0EA5E9" stopOpacity="0.05" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M0,50 C30,10 60,10 90,50 C105,35 125,30 140,50 L140,60 L0,60 Z"
-        fill="url(#hillGrad)"
-      />
     </svg>
   );
 }

@@ -11,10 +11,29 @@ import whatsappRoutes from "./routes/whatsappRoutes.js";
 import journeysRoutes from "./routes/journeysRoutes.js";
 import cancelRoutes from "./routes/cancelRoutes.js";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
 
 const app = express();
 dotenv.config();
-app.use(cors({ origin: true, credentials: true }));
+// --- CORS ---
+const allowedOrigins = [
+  process.env.FRONTEND_URL, // optional: set in Render env vars
+  "https://bookmybus-passenger.onrender.com", // deployed frontend
+  "http://localhost:5173", // local dev (optional)
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser clients (e.g. Postman) where origin is undefined
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(morgan("dev"));
 
@@ -25,6 +44,7 @@ app.use("/api/passengers", passengerRoutes);
 console.log("2");
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/companies", companyRoutes);
+console.log("Reached server.js");
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/journeys", journeysRoutes);
 app.use("/api", cancelRoutes);

@@ -10,6 +10,7 @@ import {
   safeSeatsCount,
 } from "../utils/serverTime.js";
 import mongoose from "mongoose";
+import { getRangeDates } from "../utils/dateRange.js";
 
 // minimal model shown below (if needed)
 
@@ -863,3 +864,209 @@ export async function cancelBooking(req, res) {
     return res.status(500).json({ message: "Internal server error" });
   }
 }
+
+// ---------- Helpers ----------
+
+function formatDateYYYYMMDD(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Helper to build inclusive date condition for string travelDate
+function buildTravelDateCondition(from, to) {
+  if (from && to) {
+    return { $gte: from, $lte: to };
+  }
+  if (from) {
+    return { $gte: from };
+  }
+  if (to) {
+    return { $lte: to };
+  }
+  return undefined;
+}
+
+// Helper: normalize Date/String → "YYYY-MM-DD" or null
+function normalizeToYMD(value) {
+  if (!value) return null;
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const tzOffset = d.getTimezoneOffset();
+  if (tzOffset !== 0) {
+    d.setMinutes(d.getMinutes() - tzOffset);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+// ✅ Active bookings for company
+export const getCompanyBookings = async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    if (!companyId) {
+      return res
+        .status(400)
+        .json({ message: "companyId query parameter is required" });
+    }
+
+    // 1) Find all buses of this company
+    const buses = await Bus.find({ companyId })
+      .select("_id busNo busName price route schedule")
+      .lean();
+
+    const busIds = buses.map((b) => b._id);
+    const busMap = new Map(buses.map((b) => [b._id.toString(), b]));
+
+    // 2) Find bookings on those buses
+    const rawBookings = await Booking.find({
+      busId: { $in: busIds },
+      // you can optionally exclude cancelled if you also store them here:
+      // status: { $ne: "Cancelled" },
+    })
+      .populate("passenger") // adapt if your ref name is different
+      .lean();
+
+    // 3) Normalize to a clean shape for the frontend
+    const result = rawBookings.map((b) => {
+      const busDoc = busMap.get(b.busId?.toString?.() || "") || {};
+
+      return {
+        _id: b._id,
+        status: b.status || "Confirmed",
+        travelDate: normalizeToYMD(b.travelDate),
+        seats: b.seats || [],
+        pickup: b.pickup,
+        drop: b.drop,
+        payment: b.payment,
+        createdAt: b.createdAt,
+
+        passenger: b.passenger || b.passengerSnapshot || {},
+
+        bus: {
+          _id: busDoc._id || b.busId,
+          busNo: busDoc.busNo,
+          busName: busDoc.busName,
+          price: busDoc.price,
+          route: busDoc.route,
+          schedule: busDoc.schedule,
+        },
+      };
+    });
+
+    return res.json(result);
+  } catch (err) {
+    console.error("getCompanyBookings error:", err);
+    return res
+      .status(500)
+      .json({ message: "Failed to fetch company bookings." });
+  }
+};
+
+// backend/controllers/bookingController.js  (continued)
+
+// ✅ Cancelled bookings for this company (for its buses only)
+// backend/controllers/bookingController.js (continue)
+
+// ✅ Cancelled bookings for company
+export const getCompanyCancelledBookings = async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    if (!companyId) {
+      return res
+        .status(400)
+        .json({ message: "companyId query parameter is required" });
+    }
+
+    // 1) Find all buses of this company
+    const buses = await Bus.find({ companyId }).select("_id").lean();
+    const busIds = buses.map((b) => b._id.toString());
+
+    // 2) Find cancelled bookings whose meta.busId is one of those buses
+    const cancelledDocs = await CancelledBooking.find({
+      "meta.busId": { $in: busIds },
+    }).lean();
+
+    // 3) Map snapshot into same shape as active bookings
+    const result = cancelledDocs.map((doc) => {
+      const b = doc.booking || {};
+      const meta = doc.meta || {};
+      const busSnap = b.bus || {};
+
+      return {
+        _id: doc._id,
+        status: "Cancelled",
+
+        travelDate:
+          normalizeToYMD(meta.travelDate) || normalizeToYMD(b.travelDate),
+
+        seats: b.seats || [],
+        pickup: b.pickup,
+        drop: b.drop,
+        payment: b.payment,
+        createdAt: b.createdAt || doc.createdAt,
+
+        passenger: b.passenger || {},
+
+        bus: {
+          _id: meta.busId,
+          busNo: busSnap.busNo,
+          busName: busSnap.busName,
+          price: meta.busPrice ?? busSnap.price,
+          route: busSnap.route,
+          schedule: busSnap.schedule,
+        },
+
+        cancelReason: doc.reason,
+        cancelledAt: doc.processedAt || doc.updatedAt || doc.createdAt,
+      };
+    });
+
+    return res.json(result);
+  } catch (err) {
+    console.error("getCompanyCancelledBookings error:", err);
+    return res
+      .status(500)
+      .json({ message: "Failed to fetch cancelled bookings." });
+  }
+};
+
+export const getBookingById = async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    const { id } = req.params;
+
+    if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({ message: "Invalid companyId" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid booking id format" });
+    }
+
+    const booking = await Booking.findById(id).populate(
+      "busId",
+      "busName busNo route schedule price companyId"
+    );
+
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    if (String(booking.busId.companyId) !== String(companyId)) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to view this booking" });
+    }
+
+    return res.json(booking);
+  } catch (err) {
+    console.error("getBookingById error:", err);
+    return res.status(500).json({ message: "Failed to fetch booking" });
+  }
+};
