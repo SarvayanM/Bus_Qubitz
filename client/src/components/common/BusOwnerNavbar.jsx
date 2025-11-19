@@ -135,7 +135,7 @@ export default function BusOwnerNavbar() {
             </span>
 
             <button
-              onClick={() => navigate("/busOwner/profile")}
+              
               className="p-2 rounded-lg bg-slate-100 hover:bg-blue-100 ring-1 ring-slate-200 transition"
               aria-label="Company Profile"
             >

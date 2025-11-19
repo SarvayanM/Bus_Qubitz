@@ -107,41 +107,34 @@ export default function BusOwnerDashboard() {
   // ----------------------
   // Full-screen loader / error overlay
   // ----------------------
-  if (loading || error) {
+  // 1. Show loading screen
+  if (loading) {
     return (
-      <AnimatePresence initial={false} mode="wait">
-        {loading && (
-          <motion.div
-            key="loading"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center shadow-sm"
-          >
-            <BusLoader
-              message="Loading…"
-              subtext="Preparing the dashboard"
-              height="h-40"
-              className="mx-auto max-w-2xl"
-            />
-          </motion.div>
-        )}
+      <div className="min-h-screen grid place-items-center bg-slate-50 px-4">
+        <BusLoader
+          message="Loading Dashboard..."
+          subtext="Fetching Dashboard Datas"
+          height="h-56"
+          className="max-w-lg"
+        />
+      </div>
+    );
+  }
 
-        {!loading && error && (
-          <motion.div
-            key="error"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="max-w-2xl mx-auto rounded-xl p-6 border border-blue-100 bg-white text-center shadow-sm"
-          >
-            <h3 className="text-lg font-bold mb-1 text-gray-900">
-              We couldn’t load the dashboard
-            </h3>
-            <p className="text-sm text-gray-600">{error}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+  // 2. Show error screen
+  if (error) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-slate-50 px-4">
+        <BusLoader
+          message="Error loading Dashboard"
+          subtext={
+            error ||
+            "Make sure you are logged in and the companyId cookie is set."
+          }
+          height="h-56"
+          className="max-w-lg"
+        />
+      </div>
     );
   }
 
@@ -171,9 +164,9 @@ export default function BusOwnerDashboard() {
         "Selected Bus";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900/5 via-blue-50 to-slate-100">
+    <div className="min-h-screen ">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-xl shadow-md border-b border-slate-200/70 sticky top-0 z-20">
+      <header className="bg-white/80 backdrop-blur-xl shadow-md border-b border-slate-200/70 sticky top-16 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 mt-14">
           {/* Centered Company Name */}
           <div className="w-full flex flex-col items-center justify-center text-center gap-1 in-view animate-fly-in-from-top">
@@ -183,7 +176,8 @@ export default function BusOwnerDashboard() {
             <h1 className="text-2xl sm:text-3xl font-extrabold text-blue-900 tracking-tight">
               {company?.companyName || "Company"} Dashboard
             </h1>
-            <p className="text-slate-600 text-xs sm:text-sm mt-2 max-w-xl">
+
+            <p className="mt-1 text-slate-600 max-w-2xl mx-auto text-sm sm:text-base">
               Everything you need in one place -{" "}
               <span className="font-semibold text-blue-900">
                 smart insights, clean metrics, and a clear overview

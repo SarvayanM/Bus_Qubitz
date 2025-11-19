@@ -8,6 +8,7 @@ import Cookies from "js-cookie";
 // import appBg from "./assets/images/bg.jpg";
 import RoleContext from "./components/common/RoleContext";
 import { Toaster } from "react-hot-toast";
+import { motion } from "framer-motion";
 
 import Navbar from "./components/common/Navbar";
 import PassengerNavbar from "./components/passenger/PassengerNavbar";
@@ -53,6 +54,36 @@ function AppContent() {
   const pathname = location.pathname;
   const showGlobalBg = !NO_BG_PATHS.has(pathname);
   const hideNavbar = HIDE_NAV_PATHS.has(pathname);
+
+  const [showScrollUp, setShowScrollUp] = useState(false);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop =
+        window.scrollY || document.documentElement.scrollTop || 0;
+      const windowHeight = window.innerHeight || 0;
+      const docHeight = document.documentElement.scrollHeight || 0;
+
+      const threshold = 40; // px tolerance for top / bottom
+
+      const atTop = scrollTop <= threshold;
+      const atBottom = windowHeight + scrollTop >= docHeight - threshold;
+
+      // 👇 This exactly matches your requirement:
+      // - At top:    showDown = true,  showUp = false
+      // - At bottom: showDown = false, showUp = true
+      // - Middle:    showDown = true,  showUp = true
+      setShowScrollDown(!atBottom);
+      setShowScrollUp(!atTop);
+    };
+
+    // Run once to set initial state
+    handleScroll();
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   // keep role in sync with localStorage
   useEffect(() => {
@@ -131,6 +162,69 @@ function AppContent() {
 
         {/* FOOTER */}
         {!hideNavbar && <Footer />}
+
+        {/* Scroll controls (global) */}
+        {/* Scroll To Top */}
+
+        {showScrollUp && (
+          <motion.button
+            type="button"
+            aria-label="Scroll to top"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            initial={{ opacity: 0, y: 40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.9 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed right-5 bottom-28 z-50 inline-flex h-11 w-11 items-center justify-center rounded-full bg-blue-900 text-white shadow-lg cursor-pointer hover:bg-blue-800 hover:shadow-2xl active:scale-95 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <svg
+              className="w-5 h-5 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 15l7-7 7 7"
+              />
+            </svg>
+          </motion.button>
+        )}
+
+        {/* Scroll To Bottom (only at top) */}
+        {showScrollDown && (
+          <motion.button
+            type="button"
+            aria-label="Scroll to bottom"
+            onClick={() =>
+              window.scrollTo({
+                top: document.documentElement.scrollHeight,
+                behavior: "smooth",
+              })
+            }
+            initial={{ opacity: 0, y: 40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.9 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed right-5 bottom-6 z-50 inline-flex h-11 w-11 items-center justify-center rounded-full bg-blue-900 text-white shadow-lg cursor-pointer hover:bg-blue-800 hover:shadow-2xl active:scale-95 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <svg
+              className="w-5 h-5 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </motion.button>
+        )}
       </div>
     </RoleContext.Provider>
   );

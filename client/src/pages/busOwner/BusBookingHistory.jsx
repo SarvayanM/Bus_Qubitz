@@ -561,25 +561,20 @@ export default function BusBookingHistory() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+    <div className="min-h-screen">
       {/* Header */}
-      <header className="shadow-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 py-4 mt-10">
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-            className="flex flex-col items-center justify-center text-center gap-1"
-          >
-            <div className="text-center">
-              <h1 className="text-2xl sm:text-3xl font-bold text-blue-900 tracking-tight">
-                {company?.companyName || "Company"} Booking History
-              </h1>
-              <p className="text-slate-600 text-sm mt-1">
-                Review, filter, and export booking history across your fleet
-              </p>
-            </div>
-          </motion.div>
+      <header className="bg-white/80 backdrop-blur-xl shadow-md border-b border-slate-200/70 sticky top-16 z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 mt-14">
+          {/* Centered Company Name */}
+          <div className="w-full flex flex-col items-center justify-center text-center gap-1 in-view animate-fly-in-from-top">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-blue-900 tracking-tight">
+             {company?.companyName || "Company"} Booking History
+            </h1>
+
+            <p className="mt-1 text-slate-600 max-w-2xl mx-auto text-sm sm:text-base">
+              Review, filter, and export booking history across your fleet
+            </p>
+          </div>
         </div>
       </header>
 
